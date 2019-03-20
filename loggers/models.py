@@ -1,9 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-# Create your models here.
-
-
+# TODO: add license, project, immuno models
 # class License(models.Model):
 #     license_name = models.CharField(max_length=200)
 #     number_of_animals = models.IntegerField
@@ -12,6 +10,8 @@ from django.utils import timezone
 #         return self.license_name
 
 
+# mouse model
+# TODO: add mouse gender as a choice field, same as license, project, strain
 class Mouse(models.Model):
     mouse_name = models.CharField(max_length=200)
     dob = models.DateField('date of birth', default=timezone.localdate)
@@ -24,6 +24,7 @@ class Mouse(models.Model):
         return self.mouse_name
 
 
+# TODO: turn path string fields into actual path fields
 class Window(models.Model):
     mouse_name = models.ForeignKey(Mouse, related_name='window', on_delete=models.CASCADE)
     window_date = models.DateTimeField('date window was taken', default=timezone.now)
@@ -37,6 +38,8 @@ class Window(models.Model):
         return self.mouse_name.mouse_name + '_' + self.region
 
 
+# TODO: turn path string fields into actual path fields, add anesthesia and type as choice fields,
+# duration as duration field
 class Surgery(models.Model):
     mouse_name = models.ForeignKey(Mouse, related_name='surgery', on_delete=models.CASCADE)
     date = models.DateTimeField('date of operation', default=timezone.now)
@@ -50,6 +53,7 @@ class Surgery(models.Model):
         return self.mouse_name+'_'+self.type
 
 
+# TODO: turn path string fields into actual path fields
 class Cricket(models.Model):
     date = models.DateTimeField('date of the experiment', default=timezone.now)
     stimulus = models.CharField(max_length=200, default="N/A")
@@ -61,6 +65,7 @@ class Cricket(models.Model):
         return self.date+'_'+self.stimulus
 
 
+# TODO: turn path string fields into actual path fields
 class TwoPhoton(models.Model):
     mouse_name = models.ForeignKey(Mouse, related_name='two_photon', on_delete=models.CASCADE)
     date = models.DateTimeField('date of the experiment', default=timezone.now)
@@ -71,8 +76,9 @@ class TwoPhoton(models.Model):
 
     def __str__(self):
         return self.mouse_name+'_'+self.stimulusPath
-    
-    
+
+
+# TODO: turn path string fields into actual path fields
 class IntrinsicImaging(models.Model):
     mouse_name = models.ForeignKey(Mouse, related_name='intrinsic_imaging', on_delete=models.CASCADE)
     path = models.CharField(max_length=200, default="N/A")
@@ -85,6 +91,7 @@ class IntrinsicImaging(models.Model):
         return self.mouse_name+'_'+self.stimulus+'_'+self.region
 
 
+# TODO: turn path string fields into actual path fields
 class VRExperiment(models.Model):
     mouse_name = models.ForeignKey(Mouse, related_name='vr_experiment', on_delete=models.CASCADE)
     date = models.DateTimeField('date of the experiment', default=timezone.now)

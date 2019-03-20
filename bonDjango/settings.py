@@ -23,8 +23,10 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = '-ltsg-6w_q!5)%ycmdk_ne9hv!o26_^u&gp#o7@j*0hznw$a@j'
 
 # SECURITY WARNING: don't run with debug turned on in production!
+# except I don't think we'll ever run this in production mode.
+# TODO: have this discussion at some point :p
 DEBUG = True
-
+# server local IP effectively
 ALLOWED_HOSTS = ['192.168.236.135']
 
 
@@ -120,11 +122,15 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
 
 STATIC_URL = '/static/'
-
+# define the base path for loading static files (i.e. the target for the paths)
+# TODO: need to define the this for the users, maybe just J: or similar?
 STATICFILES_DIRS = ["J:/Drago Guggiana Nilo/"]
 
+# DRF specific configuration settings
 REST_FRAMEWORK = {
+    # pagination to not show too many results per page
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10,
+    # define the default filter backend
     'DEFAULT_FILTER_BACKENDS': ('django_filters.rest_framework.DjangoFilterBackend',),
 }
