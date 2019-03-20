@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Query results</title>
+</head>
+<body>
+<ul>
+    {% for el in model_list %}
+    <li><a href="/loggers/model_details/{{ model_type }}/{{ el }}/">{{ el }}</a></li>
+    {% endfor %}
+</ul>
+</body>
+</html>

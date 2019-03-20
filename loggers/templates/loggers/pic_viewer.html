@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Picture display</title>
+</head>
+<body>
+    {% if pic_list %}
+        {% load static %}
+        <ul>
+            {% for p in pic_list%}
+                <li><img src=p> </li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <ul>
+            {% for el in link_list %}
+                <li><a href="" methods="post"></a></li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</body>
+</html>

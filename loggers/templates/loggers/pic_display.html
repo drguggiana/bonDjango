@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+    {% load static %}
+    <ul>
+        {% for p in pic_list %}
+            <li><img src="{{ p }}" alt=""> </li>
+        {% endfor %}
+    </ul>
+    <br>
+    <a href="/loggers/window">Back to windows page</a>
+
+
+</body>
+</html>

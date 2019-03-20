@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Experiment selection</title>
+</head>
+<body>
+<p>Browse database</p>
+<ul>
+    {% for u,v in model_list %}
+    <li><a href="/loggers/browse_models/{{ u }}/">{{ u }}</a></li>
+    {% endfor %}
+</ul>
+
+<p>Log new entries</p>
+<ul>
+    {% for u in log_list %}
+    <!--<li>{{m.mouse_name}}</li>-->
+    <li><a href="/loggers/log_view/{{ u }}/">{{ u }}</a></li>
+    {% endfor %}
+    <!--{% load static %}-->
+    <!--<li><img src="C:\Users\drguggiana\Desktop\Gym_schedule.jpeg"> </li>-->
+    <!--<li><img src="{% static "Gym_schedule.jpeg" %}"</li>-->
+    <!--<li><img src="{% static "DG_180228_b_BF.tif" %}"</li>-->
+</ul>
+
+<p><a href="/loggers/query_manager/">Search</a></p>
+
+<p><a href="loggers/pic_view/">View pics</a></p>
+</body>
+</html>
+
+<!--{% if latest_question_list %}-->
+    <!--<ul>-->
+    <!--{% for question in latest_question_list %}-->
+        <!--<li><a href="/polls/{{ question.id }}/">{{ question.question_text }}</a></li>-->
+    <!--{% endfor %}-->
+    <!--</ul>-->
+<!--{% else %}-->
+    <!--<p>No polls are available.</p>-->
+<!--{% endif %}-->
