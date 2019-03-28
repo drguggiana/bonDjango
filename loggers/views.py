@@ -14,6 +14,7 @@ from os.path import join
 # django imports for the scheduler and direct linking
 from django.core import management
 from django.http import HttpResponseRedirect
+from django.urls import resolve
 
 # DRF specific requirements
 from rest_framework import filters
@@ -49,15 +50,13 @@ def labfolder_entry(instance):
 
 # view to show images in the database, ideally after search query
 # TODO: create a thumbnail version for browsing that then loads the full res image upon clicking
-def pic_display(instance, request):
+def pic_display(data):
 
     # # debugging code
     # pp = pprint.PrettyPrinter()
     # target = inspect.getmembers(instance)
     # pp.pprint([f[0] for f in target])
-
-    # get the object data
-    data = [instance.get_object()]
+    # print(instance.get_queryset())
 
     # generate a url for a JPEG version of the TIF image
     def generate_image_url(image_path):
@@ -137,6 +136,24 @@ class WindowViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
+    # override the filter_queryset method from the generics to capture the search terms in session data
+    def filter_queryset(self, queryset):
+        # get the queryset (so effectively run the method normally)
+        queryset = super().filter_queryset(queryset)
+        # if a search was performed
+        if 'search' in self.request.GET:
+            # get the search terms from the request
+            search_string = self.request.GET['search']
+        else:
+            # otherwise just save an empty string
+            search_string = ''
+        # save the search_string in the session data
+        self.request.session['filtered_queryset'] = search_string
+        # force update of the session data (not sure if essential here)
+        self.request.session.modified = True
+        # return the queryset
+        return queryset
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
@@ -146,10 +163,21 @@ class WindowViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect('/loggers/')
 
     # extra action to display some or all of the pics available
-    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def pic_action(self, request, *args, **kwargs):
+
+        # remember original mutability state of the request
+        _mutable = self.request.GET._mutable
+        # set it to mutable
+        self.request.GET._mutable = True
+        # сhange the search parameters in the request to the ones we saved in session
+        self.request.GET['search'] = request.session['filtered_queryset']
+        # set the mutable flag back
+        self.request.GET._mutable = _mutable
+        # filter the queryset with the updated search terms
+        data = self.filter_queryset(self.get_queryset())
         # get the pic url list from the function above
-        pic_list = pic_display(self, request)
+        pic_list = pic_display(data)
         # return a response to the pic displaying template
         return Response({'pic_list': pic_list}, template_name='loggers/pic_display.html')
 
