@@ -1,6 +1,6 @@
 from datetime import datetime # necessary import, do not delete
 from apscheduler.schedulers.background import BackgroundScheduler
-from .views import dump_database
+from .views import dump_database, check_restriction
 
 # see https://medium.com/@kevin.michael.horan/scheduling-tasks-in-django-with-the-advanced-python-scheduler-663f17e868e6
 # for tutorial that got me here with the scheduling
@@ -10,4 +10,5 @@ from .views import dump_database
 def start():
     scheduler = BackgroundScheduler()
     scheduler.add_job(dump_database, 'interval', weeks=1)
+    # scheduler.add_job(check_restriction, 'interval', seconds=30)
     scheduler.start()

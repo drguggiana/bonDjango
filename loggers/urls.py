@@ -13,18 +13,21 @@ schema_view = get_schema_view(title='bonDjango schema')
 
 # create a list of the model names
 model_list = inspect.getmembers(models, inspect.isclass)
-
+# TODO: have actual names (maybe from string method) instead of URLs on the links
 # set up the url router
 router = DefaultRouter()
-# register the different models with their viewsets
-router.register(r'mouse', views.MouseViewSet)
+
+# generate a list of the model classes
+classMembers = inspect.getmembers(models, inspect.isclass)
+classList = [model[0] for model in classMembers]
+
+# register their viewsets with the router
+for model in classList:
+    router.register(views.convert(model), eval('views.'+model+'ViewSet'))
+
+# register the user model viewset too
 router.register(r'user', views.UserViewSet)
-router.register(r'window', views.WindowViewSet)
-router.register(r'surgery', views.SurgeryViewSet)
-router.register(r'cricket', views.CricketViewSet)
-router.register(r'two_photon', views.TwoPhotonViewSet)
-router.register(r'intrinsic_imaging', views.IntrinsicImagingViewSet)
-router.register(r'vr_experiment', views.VRExperimentViewSet)
+router.register(r'group', views.GroupViewSet)
 
 # generate the actual list of urls produced by the router plus the schema view
 urlpatterns = [

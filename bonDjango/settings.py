@@ -11,10 +11,10 @@ https://docs.djangoproject.com/en/2.1/ref/settings/
 """
 
 import os
+import socket
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/2.1/howto/deployment/checklist/
@@ -24,10 +24,9 @@ SECRET_KEY = '-ltsg-6w_q!5)%ycmdk_ne9hv!o26_^u&gp#o7@j*0hznw$a@j'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 # except I don't think we'll ever run this in production mode.
-# TODO: have this discussion at some point :p
 DEBUG = True
 # server local IP effectively
-ALLOWED_HOSTS = ['192.168.236.135']
+ALLOWED_HOSTS = [str(socket.gethostbyname(socket.gethostname()))]
 
 
 # Application definition
@@ -41,6 +40,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 'easy_thumbnails',
+    # 'mptt',
+    # 'filer',
 ]
 
 MIDDLEWARE = [
@@ -58,7 +60,7 @@ ROOT_URLCONF = 'bonDjango.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR, r"loggers\templates"), ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -117,14 +119,16 @@ USE_L10N = True
 
 USE_TZ = True
 
+# added with django-pyexcel
+FILE_UPLOAD_HANDLERS = ("django_excel.ExcelMemoryFileUploadHandler",
+                        "django_excel.TemporaryExcelFileUploadHandler")
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.1/howto/static-files/
 
 STATIC_URL = '/static/'
 # define the base path for loading static files (i.e. the target for the paths)
-# TODO: need to define the this for the users, maybe just J: or similar?
-STATICFILES_DIRS = ["J:/Drago Guggiana Nilo/"]
+STATICFILES_DIRS = [os.path.join(BASE_DIR, r"\loggers\static\loggers"), ]
 
 # DRF specific configuration settings
 REST_FRAMEWORK = {
