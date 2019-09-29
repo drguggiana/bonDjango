@@ -1,6 +1,8 @@
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
+from django.contrib.auth.models import User
+
 
 null_value = False
 default_user = None
@@ -52,7 +54,8 @@ class MouseSet(models.Model):
     mouse_set_name = models.CharField(max_length=200, default="N/A", primary_key=True)
     strain = models.ForeignKey('Strain', related_name='mouseset', on_delete=models.CASCADE)
     license = models.ForeignKey('License', related_name='mouseset', on_delete=models.CASCADE)
-    number_of_animals = models.IntegerField
+    max_number = models.IntegerField('Max number of animals', default=1)
+    current_number = models.IntegerField('Current number of animals', default=0)
     owner = models.ForeignKey('auth.User', related_name='mouseset', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
 
@@ -65,8 +68,7 @@ class Mouse(models.Model):
 
     mouse_name = models.CharField(max_length=200, primary_key=True)
     dob = models.DateField('date of birth', default=timezone.localdate)
-    # strain_name = models.ForeignKey('Strain', related_name='mouse', on_delete=models.CASCADE)
-    strain_name = models.CharField(max_length=200, default="N/A")
+    strain_name = models.CharField(max_length=200, default="N/A", null=True)
     mouse_gender = models.CharField(max_length=100, default="female", choices=GENDERS)
     mouse_set = models.ForeignKey('MouseSet', related_name='mouse', on_delete=models.CASCADE, null=True)
     owner = models.ForeignKey('auth.User', related_name='mouse', on_delete=models.CASCADE,
@@ -112,7 +114,6 @@ class ScoreSheet(models.Model):
         super().save(*args, **kwargs)
 
 
-# TODO: implement easy loading of a path (maybe using preloaded settings)
 # TODO: implement cache to not have to reenter every entry
 class Window(models.Model):
     # define the possible regions
@@ -135,7 +136,7 @@ class Window(models.Model):
     region = models.CharField(max_length=100, default=V1, choices=REGION_LIST)
     owner = models.ForeignKey('auth.User', related_name='window', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
-    testPath = models.CharField(max_length=1000, default='N/A')
+    testPath = models.CharField(max_length=1000, default='N/A', null=True)
 
     def __str__(self):
         return self.mouse.mouse_name + '_' + self.region
@@ -161,24 +162,33 @@ class Surgery(models.Model):
         return self.mouse.mouse_name+'_'+str(self.experiment_type.all()[0].authorization_name)
 
 
-# # duration as duration field
-# class Restriction(models.Model):
-#     # define the types of restriction
-#     food = 'Food'
-#     water = 'Water'
-#
-#     RESTRICTION_LIST = [(food, 'Food'), (water, 'Water')]
-#     mouse = models.ForeignKey(Mouse, related_name='restriction', on_delete=models.CASCADE)
-#     date = models.DateTimeField('date of operation', default=timezone.now)
-#     experiment_type = models.ManyToManyField('ExperimentType', related_name='restriction_type')
-#     duration = models.IntegerField('Duration in minutes of the procedure', default=1)
-#     notes = models.TextField(max_length=5000, default="N/A")
-#     restriction_type = models.CharField(max_length=100, default=food, choices=RESTRICTION_LIST)
-#     owner = models.ForeignKey('auth.User', related_name='surgery', on_delete=models.CASCADE,
-#                               null=null_value, default=default_user)
-#
-#     def __str__(self):
-#         return self.mouse.mouse_name + '_' + str(self.experiment_type.all()[0].authorization_name)
+# duration as duration field
+class RestrictionType(models.Model):
+    # define the types of restriction
+    food = 'Food'
+    water = 'Water'
+
+    RESTRICTION_LIST = [(food, 'Food'), (water, 'Water')]
+    duration = models.IntegerField('Duration in days of the restriction in days', default=1)
+    restricted_element = models.CharField(max_length=100, default=food, choices=RESTRICTION_LIST)
+    mouse_set = models.ForeignKey(MouseSet, related_name='restrictiontype', on_delete=models.CASCADE)
+    owner = models.ForeignKey('auth.User', related_name='restrictiontype', on_delete=models.CASCADE,
+                              null=null_value, default=default_user)
+
+    # def __str__(self):
+    #     return self.mouse.mouse_name + '_' + str(self.experiment_type.all()[0].authorization_name)
+
+
+class Restriction(models.Model):
+    mouse = models.ForeignKey(Mouse, related_name='restriction', on_delete=models.CASCADE)
+    restriction_type = models.ForeignKey(RestrictionType, related_name='restriction', on_delete=models.CASCADE)
+    start_date = models.DateTimeField('date of restriction start', default=timezone.now)
+    end_date = models.DateTimeField('date of restriction end', null=True)
+    ongoing = models.BooleanField('Is the restriction enabled', default=True)
+
+    notes = models.TextField(max_length=5000, default="N/A")
+    owner = models.ForeignKey('auth.User', related_name='restriction', on_delete=models.CASCADE,
+                              null=null_value, default=default_user)
 
 
 class Cricket(models.Model):
@@ -246,6 +256,19 @@ class ImmunoStain(models.Model):
     owner = models.ForeignKey('auth.User', related_name='immunostain', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
     notes = models.TextField(max_length=1000, default="N/A")
+
+
+class Profile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    main_path = models.CharField(max_length=1000, default='"N/A')
+    ScoreSheet_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    Window_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    Cricket_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    TwoPhoton_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    IntrinsicImaging_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    VRExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    ImmunoStain_path = models.CharField(max_length=1000, default='"N/A', null=True)
+
 
 
 

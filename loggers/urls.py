@@ -13,7 +13,6 @@ schema_view = get_schema_view(title='bonDjango schema')
 
 # create a list of the model names
 model_list = inspect.getmembers(models, inspect.isclass)
-# TODO: have actual names (maybe from string method) instead of URLs on the links
 # set up the url router
 router = DefaultRouter()
 

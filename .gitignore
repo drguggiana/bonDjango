@@ -1,6 +1,8 @@
 # Custom stuff from Drago
 
 loggers/userAuth.py
+loggers/migrations/
+.idea/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -12,7 +12,6 @@ common_extra_kwargs = {'mouse': {'lookup_field': 'mouse_name'}}
 class MouseSerializer(serializers.HyperlinkedModelSerializer):
     # define the fields associated with the model
     # owner is special since it has to be read only
-    # TODO: so will project and license I guess
     owner = serializers.ReadOnlyField(source='owner.username')
     # the rest are all hyperlinked so people can navigate in the API online
     # field contents involve establishing that the serializer will deal with many instances, the name of the view and
@@ -41,11 +40,20 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
         extra_kwargs = {'url': {'lookup_field': 'mouse_name'}}
 
 
+class ProfileSerializer(serializers.HyperlinkedModelSerializer):
+
+    class Meta:
+        model = Profile
+        fields = ([f.name for f in model._meta.get_fields()]+['url'])
+
+
 class UserSerializer(serializers.HyperlinkedModelSerializer):
+
+    main_path = serializers.ReadOnlyField(source='profile.main_path',)
 
     class Meta:
         model = User
-        fields = ('url', 'id', 'username', 'mouse', 'groups')
+        fields = ('url', 'id', 'username', 'mouse', 'groups', 'main_path')
         extra_kwargs = common_extra_kwargs.copy()
         # extra_kwargs['url'] = {'lookup_field': 'username'}
 
@@ -59,7 +67,7 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
 
 class WindowSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    testPath = serializers.CharField(style={'base_template': 'fileMod.html'})
+    testPath = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
 
     class Meta:
         model = Window
@@ -72,6 +80,25 @@ class SurgerySerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Surgery
+        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        extra_kwargs = common_extra_kwargs.copy()
+
+
+class RestrictionTypeSerializer(serializers.HyperlinkedModelSerializer):
+    owner = serializers.ReadOnlyField(source='owner.username')
+
+    class Meta:
+        model = RestrictionType
+        fields = ([f.name for f in model._meta.get_fields()]+['url', 'owner'])
+
+
+class RestrictionSerializer(serializers.HyperlinkedModelSerializer):
+    owner = serializers.ReadOnlyField(source='owner.username')
+    start_date = serializers.ReadOnlyField()
+    end_date = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Restriction
         fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
         extra_kwargs = common_extra_kwargs.copy()
 

@@ -23,6 +23,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.exceptions import PermissionDenied
 
 # imports from the same project
 from . import labfolderRequest
@@ -98,11 +99,11 @@ def dump_database():
 # view to check whether food restriction is over schedule
 # TODO: implement the check
 def check_restriction():
-    print('yay')
-    # # iterate through the mice in the database
-    # for mouse in Mouse.objects.all():
-    #     # check if the mouse has a restriction
-    #     if
+    print('Checking restrictions')
+    # iterate through the restrictions in the database
+    for restriction in Restriction.objects.all():
+        if restriction.ongoing and (restriction.end_date < timezone.now()):
+            print('Mouse: ' + str(restriction.mouse) + ' should not be restricted anymore')
 
 
 # function to render the scoresheets as part of the template
@@ -130,6 +131,27 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     # define the corresponding serializer
     serializer_class = UserSerializer
+
+
+# viewset for the profile model
+class ProfileViewSet(viewsets.ModelViewSet):
+    # define the User objects to handle with this viewset
+    queryset = Profile.objects.all()
+    # define the corresponding serializer
+    serializer_class = ProfileSerializer
+    # # define the permissions structure
+    # permission_classes = (permissions.IsAuthenticatedOrReadOnly,
+    #                       IsOwnerOrReadOnly,)
+
+    def perform_create(self, serializer):
+        # populate the path fields
+        field_list = [f.name for f in Profile._meta.get_fields() if not f.is_relation]
+        # print(field_list)
+        save_statement = ''
+        for f in field_list:
+            if f not in ['user', 'main_path', 'id', 'pk']:
+                save_statement += f+"='"+self.request.data['main_path']+f[:-5]+"',"
+        eval("serializer.save(" + save_statement + ")")
 
 
 # viewset for the group model
@@ -162,7 +184,24 @@ class MouseViewSet(viewsets.ModelViewSet):
 
     # override of the perform_create method to also include the user when saving a new instance
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user, strain_name=self.kwargs.get('mouseset__strain__strain_name'))
+        # check that there are enough mouse slots left in the mouseset
+        max_number = serializer.validated_data['mouse_set'].max_number
+        current_number = serializer.validated_data['mouse_set'].current_number
+        if current_number < max_number:
+            current_number += 1
+            # mouseset_name = self.request.data['mouse_set'].split('/')[5]
+            # serializer.save(owner=self.request.user,
+            #                 strain_name=MouseSet.objects.get(mouse_set_name=mouseset_name).strain_id)
+
+            # alternative way
+            mouse_set_instance = serializer.validated_data['mouse_set']
+            data = {'current_number': current_number}
+            mouse_set_serializer_instance = MouseSetSerializer(mouse_set_instance, data=data, partial=True)
+            mouse_set_serializer_instance.is_valid()
+            mouse_set_serializer_instance.save()
+            serializer.save(owner=self.request.user, strain_name=mouse_set_instance.strain_id)
+        else:
+            raise PermissionDenied({'message': 'Max number of mice reached on this set'})
 
     # extra action to generate a labfolder entry from the current mouse
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
@@ -208,8 +247,8 @@ class WindowViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
-        print(self.request.data)
+        serializer.save(owner=self.request.user, testPath=eval("self.request.user.profile." +
+                        self.target_model.__name__+"_path") + "\\" + str(self.request.data['Select file']))
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -281,6 +320,53 @@ class SurgeryViewSet(viewsets.ModelViewSet):
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
         return HttpResponseRedirect('/loggers/')
+
+
+class RestrictionTypeViewSet(viewsets.ModelViewSet):
+    target_model = RestrictionType
+
+    queryset = target_model.objects.all()
+    serializer_class = eval(target_model.__name__+'Serializer')
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly,
+                          IsOwnerOrReadOnly,)
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    def labfolder_action(self, request, *args, **kwargs):
+        labfolder_entry(self)
+        return HttpResponseRedirect('/loggers/')
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+class RestrictionViewSet(viewsets.ModelViewSet):
+    target_model = Restriction
+
+    queryset = target_model.objects.all()
+    serializer_class = eval(target_model.__name__+'Serializer')
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly,
+                          IsOwnerOrReadOnly,)
+    filter_backends = (filters.SearchFilter,)
+    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    def labfolder_action(self, request, *args, **kwargs):
+        labfolder_entry(self)
+        return HttpResponseRedirect('/loggers/')
+
+    def perform_create(self, serializer):
+        # calculate the end date based on the start date and the duration
+        # get the start date
+        # start_date = serializer.validated_data['start_date']
+        start_date = timezone.now()
+        # get the duration from the linked restriction type
+        duration = serializer.validated_data['restriction_type'].duration
+        # calculate the resulting date
+        end_date = start_date + datetime.timedelta(minutes=duration)
+        # save the info
+        serializer.save(owner=self.request.user, end_date=end_date, ongoing=True)
 
 
 # viewset for crickets

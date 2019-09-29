@@ -26,7 +26,7 @@ SECRET_KEY = '-ltsg-6w_q!5)%ycmdk_ne9hv!o26_^u&gp#o7@j*0hznw$a@j'
 # except I don't think we'll ever run this in production mode.
 DEBUG = True
 # server local IP effectively
-ALLOWED_HOSTS = [str(socket.gethostbyname(socket.gethostname()))]
+ALLOWED_HOSTS = [str(socket.gethostbyname(socket.gethostname())), '127.0.0.1']
 
 
 # Application definition
