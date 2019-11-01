@@ -2,10 +2,14 @@ from rest_framework import serializers
 from .models import *
 from django.contrib.auth.models import User, Group
 
-# define fields to add to the serializer that are common to almost all models
-extra_common_fields = ['url', 'mouse', 'owner']
 # define the common extra kwargs
 common_extra_kwargs = {'mouse': {'lookup_field': 'mouse_name'}}
+
+
+# define a function to put the url first and then sort all the other fields
+def sort_fields(fields):
+    sorted_fields = (['url'] + sorted(fields))
+    return sorted_fields
 
 
 # mouse serializer (comments will be basically the same for below)
@@ -16,7 +20,8 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
     # the rest are all hyperlinked so people can navigate in the API online
     # field contents involve establishing that the serializer will deal with many instances, the name of the view and
     # whether it's read only or not as default
-    window = serializers.HyperlinkedRelatedField(many=True, view_name='window-detail', read_only=True)
+    window = serializers.HyperlinkedRelatedField(many=True, view_name='window-detail', read_only=True,
+                                                 lookup_field='slug')
     surgery = serializers.HyperlinkedRelatedField(many=True, view_name='surgery-detail', read_only=True)
     two_photon = serializers.HyperlinkedRelatedField(many=True, view_name='twophoton-detail', read_only=True)
     intrinsic_imaging = serializers.HyperlinkedRelatedField(many=True,
@@ -26,25 +31,30 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
                                                       lookup_field='slug')
     immuno_stain = serializers.HyperlinkedRelatedField(many=True, view_name='immunostain-detail', read_only=True)
 
+    restriction = serializers.HyperlinkedRelatedField(many=True, view_name='restriction-detail', read_only=True,
+                                                      lookup_field='slug')
     strain_name = serializers.ReadOnlyField()
 
     # django specific Meta class
     class Meta:
         # define the model the serializer belongs to
         model = Mouse
-        # define the related fields to add to the search (which in this case is most of them)
-        related_field_list = ['url', 'owner', 'window', 'surgery', 'two_photon', 'intrinsic_imaging',
-                              'vr_experiment', 'score_sheet', 'immuno_stain']
         # define the search fields as anything that's not a relation
-        fields = ([f.name for f in model._meta.get_fields()]+related_field_list)
-        extra_kwargs = {'url': {'lookup_field': 'mouse_name'}}
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
+        extra_kwargs = {'url': {'lookup_field': 'mouse_name'}, 'restriction': {'lookup_field': 'slug'},
+                        'window': {'lookup_field': 'slug'}}
 
 
 class ProfileSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Profile
-        fields = ([f.name for f in model._meta.get_fields()]+['url'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
+        extra_kwargs = {'user': {'lookup_field': 'username'}}
 
 
 class UserSerializer(serializers.HyperlinkedModelSerializer):
@@ -54,8 +64,9 @@ class UserSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = User
         fields = ('url', 'id', 'username', 'mouse', 'groups', 'main_path')
+
         extra_kwargs = common_extra_kwargs.copy()
-        # extra_kwargs['url'] = {'lookup_field': 'username'}
+        extra_kwargs['url'] = {'lookup_field': 'username'}
 
 
 class GroupSerializer(serializers.HyperlinkedModelSerializer):
@@ -64,6 +75,8 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
         model = Group
         fields = ('url', 'name', 'user_set')
 
+        extra_kwargs = {'user_set': {'lookup_field': 'username'}}
+
 
 class WindowSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
@@ -71,8 +84,11 @@ class WindowSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Window
-        fields = ([f.name for f in model._meta.get_fields()]+['url', ])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug'}
 
 
 class SurgerySerializer(serializers.HyperlinkedModelSerializer):
@@ -80,7 +96,9 @@ class SurgerySerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Surgery
-        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -89,18 +107,29 @@ class RestrictionTypeSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = RestrictionType
-        fields = ([f.name for f in model._meta.get_fields()]+['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields.remove('slug_restrictionType')
+        fields = sort_fields(fields)
+
+        extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug_restrictionType'}
+        extra_kwargs['restriction'] = {'lookup_field': 'slug'}
 
 
 class RestrictionSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    start_date = serializers.ReadOnlyField()
+    # start_date = serializers.ReadOnlyField()
     end_date = serializers.ReadOnlyField()
 
     class Meta:
         model = Restriction
-        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields.remove('slug')
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug'}
+        extra_kwargs['restriction_type'] = {'lookup_field': 'slug_restrictionType'}
 
 
 class CricketSerializer(serializers.HyperlinkedModelSerializer):
@@ -108,7 +137,8 @@ class CricketSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Cricket
-        fields = ([f.name for f in model._meta.get_fields()]+['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
 
 
 class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
@@ -116,7 +146,9 @@ class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = TwoPhoton
-        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -125,7 +157,9 @@ class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = IntrinsicImaging
-        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -134,7 +168,9 @@ class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = VRExperiment
-        fields = ([f.name for f in model._meta.get_fields()]+extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -143,7 +179,10 @@ class ProjectSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Project
-        fields = ([f.name for f in model._meta.get_fields()]+['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
+        extra_kwargs = {'members': {'lookup_field': 'username'}}
 
 
 class LicenseSerializer(serializers.HyperlinkedModelSerializer):
@@ -151,7 +190,10 @@ class LicenseSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = License
-        fields = ([f.name for f in model._meta.get_fields()]+['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
+        extra_kwargs = {'members': {'lookup_field': 'username'}}
 
 
 class StrainSerializer(serializers.HyperlinkedModelSerializer):
@@ -159,7 +201,9 @@ class StrainSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = Strain
-        fields = ([f.name for f in model._meta.get_fields()] + ['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -168,8 +212,10 @@ class ScoreSheetSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = ScoreSheet
-        fields = ([f.name for f in model._meta.get_fields()] + extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
         fields.remove('slug')
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
         extra_kwargs['url'] = {'lookup_field': 'slug'}
 
@@ -179,7 +225,9 @@ class ImmunoStainSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = ImmunoStain
-        fields = ([f.name for f in model._meta.get_fields()] + extra_common_fields)
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
 
 
@@ -188,8 +236,11 @@ class MouseSetSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = MouseSet
-        fields = ([f.name for f in model._meta.get_fields()] + ['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
+
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['restrictiontype'] = {'lookup_field': 'slug_restrictionType'}
 
 
 class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
@@ -206,7 +257,8 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
 
     class Meta:
         model = ExperimentType
-        fields = ([f.name for f in model._meta.get_fields()] + ['url', 'owner'])
+        fields = ([f.name for f in model._meta.get_fields()])
+        fields = sort_fields(fields)
 
 
 # obtained from https://www.django-rest-framework.org/api-guide/serializers/#example

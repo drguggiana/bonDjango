@@ -13,7 +13,8 @@ from os.path import join
 
 # django imports for the scheduler and direct linking
 from django.core import management
-from django.http import HttpResponseRedirect, HttpResponse
+from django.http import HttpResponseRedirect, HttpResponse, HttpResponseBadRequest
+from django import forms
 
 # DRF specific requirements
 from rest_framework import filters
@@ -33,7 +34,7 @@ from .permissions import IsOwnerOrReadOnly
 from .serializers import *
 
 import django_excel as excel
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 
 
 # snippet to convert camel case to snake case via regex
@@ -97,7 +98,6 @@ def dump_database():
 
 
 # view to check whether food restriction is over schedule
-# TODO: implement the check
 def check_restriction():
     print('Checking restrictions')
     # iterate through the restrictions in the database
@@ -106,9 +106,18 @@ def check_restriction():
             print('Mouse: ' + str(restriction.mouse) + ' should not be restricted anymore')
 
 
-# function to render the scoresheets as part of the template
-def handson_table(request):
-    return excel.make_response_from_tables([ScoreSheet], 'handsontable.html')
+# # function to render the scoresheets as part of the template
+def handson_table(request, query_sets, fields):
+    # return excel.make_response_from_tables([ScoreSheet], 'handsontable.html')
+    return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+    # return render(
+    #     request,
+    #     'custom-handson-table.html',
+    #     {
+    #         'handsontable_content': excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+    #     })
+    # content = excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+    # return Response({'handsontable_content': render(content)}, template_name='custom-handson-table.html')
 
 
 def embedhandson_table(request):
@@ -117,12 +126,79 @@ def embedhandson_table(request):
         dest_file_type='handsontable.html',
         dest_embed=True)
     content.seek(0)
+
     return render(
         request,
         'custom-handson-table.html',
         {
             'handsontable_content': content.read()
         })
+
+
+def import_data(request):
+
+    if request.method == "POST":
+        form = UploadFileForm(request.POST, request.FILES)
+        search_fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
+
+        def na_remover(row):
+            row = [0 if el == 'N/A' else el for el in row]
+            return row
+        if form.is_valid():
+            request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[na_remover],
+                                                        mapdicts=[search_fields.sort()])
+            return HttpResponse(embedhandson_table(request))
+        else:
+            return HttpResponseBadRequest()
+    else:
+        form = UploadFileForm()
+    return render(request, 'upload_form.html', {'form': form, 'title': 'Import', 'header': 'Upload data'})
+
+
+def export_data(request, atype, queryset, fields):
+    if atype == "sheet":
+        return excel.make_response_from_a_table(ScoreSheet, 'xls', file_name="sheet")
+    elif atype == "book":
+        return excel.make_response_from_tables([ScoreSheet], 'xls', file_name="book")
+    elif atype == "custom":
+        return excel.make_response_from_query_sets(queryset, fields, 'xls', file_name='custom')
+    else:
+        return HttpResponseBadRequest("bad request, choose one")
+
+
+def save_session_data(self, queryset):
+    # # get the queryset (so effectively run the method normally)
+    # queryset = eval('super().filter_queryset(queryset)')
+    # if a search was performed
+    if 'search' in self.request.GET:
+        # get the search terms from the request
+        search_string = self.request.GET['search']
+    else:
+        # otherwise just save an empty string
+        search_string = ''
+    # save the search_string in the session data
+    self.request.session['filtered_queryset'] = search_string
+    # force update of the session data (not sure if essential here)
+    self.request.session.modified = True
+    return queryset
+
+
+def load_session_data(self, request):
+    # remember original mutability state of the request
+    _mutable = self.request.GET._mutable
+    # set it to mutable
+    self.request.GET._mutable = True
+    # сhange the search parameters in the request to the ones we saved in session
+    self.request.GET['search'] = request.session['filtered_queryset']
+    # set the mutable flag back
+    self.request.GET._mutable = _mutable
+    # filter the queryset with the updated search terms
+    data = self.filter_queryset(self.get_queryset())
+    return data
+
+
+class UploadFileForm(forms.Form):
+    file = forms.FileField()
 
 
 # viewset for the users model
@@ -132,6 +208,8 @@ class UserViewSet(viewsets.ModelViewSet):
     # define the corresponding serializer
     serializer_class = UserSerializer
 
+    lookup_field = 'username'
+
 
 # viewset for the profile model
 class ProfileViewSet(viewsets.ModelViewSet):
@@ -139,18 +217,16 @@ class ProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.all()
     # define the corresponding serializer
     serializer_class = ProfileSerializer
-    # # define the permissions structure
-    # permission_classes = (permissions.IsAuthenticatedOrReadOnly,
-    #                       IsOwnerOrReadOnly,)
+    # define the permissions structure
+    permission_classes = (IsAdminUser, )
 
     def perform_create(self, serializer):
         # populate the path fields
         field_list = [f.name for f in Profile._meta.get_fields() if not f.is_relation]
-        # print(field_list)
         save_statement = ''
         for f in field_list:
             if f not in ['user', 'main_path', 'id', 'pk']:
-                save_statement += f+"='"+self.request.data['main_path']+f[:-5]+"',"
+                save_statement += f+"='"+self.request.data['main_path']+"\\\\"+f[:-5]+"',"
         eval("serializer.save(" + save_statement + ")")
 
 
@@ -214,6 +290,7 @@ class MouseViewSet(viewsets.ModelViewSet):
 
 # viewset for the cranial windows
 class WindowViewSet(viewsets.ModelViewSet):
+    # TODO: properly set the paths to the different file systems
     target_model = Window
 
     queryset = target_model.objects.all()
@@ -221,7 +298,9 @@ class WindowViewSet(viewsets.ModelViewSet):
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
     filter_backends = (filters.SearchFilter,)
-    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name'])
+
+    lookup_field = 'slug'
 
     # def get_queryset(self):
     #     if self.request._request.method != 'GET':
@@ -232,18 +311,8 @@ class WindowViewSet(viewsets.ModelViewSet):
     def filter_queryset(self, queryset):
         # get the queryset (so effectively run the method normally)
         queryset = super().filter_queryset(queryset)
-        # if a search was performed
-        if 'search' in self.request.GET:
-            # get the search terms from the request
-            search_string = self.request.GET['search']
-        else:
-            # otherwise just save an empty string
-            search_string = ''
-        # save the search_string in the session data
-        self.request.session['filtered_queryset'] = search_string
-        # force update of the session data (not sure if essential here)
-        self.request.session.modified = True
-        # return the queryset
+        # now fix it and save it in session data
+        queryset = save_session_data(self, queryset)
         return queryset
 
     def perform_create(self, serializer):
@@ -258,17 +327,8 @@ class WindowViewSet(viewsets.ModelViewSet):
     # extra action to display some or all of the pics available
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def pic_action(self, request, *args, **kwargs):
-
-        # remember original mutability state of the request
-        _mutable = self.request.GET._mutable
-        # set it to mutable
-        self.request.GET._mutable = True
-        # сhange the search parameters in the request to the ones we saved in session
-        self.request.GET['search'] = request.session['filtered_queryset']
-        # set the mutable flag back
-        self.request.GET._mutable = _mutable
-        # filter the queryset with the updated search terms
-        data = self.filter_queryset(self.get_queryset())
+        # load data from the session
+        data = load_session_data(self, request)
         # get the pic url list from the function above
         pic_list = pic_display(data)
         # return a response to the pic displaying template
@@ -300,9 +360,8 @@ class SurgeryViewSet(viewsets.ModelViewSet):
         if self.action == 'create' and 'experiment_type' in self.request.data:
             # get the type of experiment from the url
             url_experiment_type = self.request.data['experiment_type'].split('/')[5]
-
             # get the users in the experiment type
-            user_queryset = ExperimentType.objects.get(authorization_name=url_experiment_type).users.all()
+            user_queryset = ExperimentType.objects.get(experiment_name=url_experiment_type).users.all()
             if self.request.user not in user_queryset:
                 permission_classes = [IsAdminUser, ]
             else:
@@ -332,6 +391,8 @@ class RestrictionTypeViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
+    lookup_field = 'slug_restrictionType'
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
@@ -351,6 +412,8 @@ class RestrictionViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
+    lookup_field = 'slug'
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
@@ -364,7 +427,7 @@ class RestrictionViewSet(viewsets.ModelViewSet):
         # get the duration from the linked restriction type
         duration = serializer.validated_data['restriction_type'].duration
         # calculate the resulting date
-        end_date = start_date + datetime.timedelta(minutes=duration)
+        end_date = start_date + datetime.timedelta(days=duration)
         # save the info
         serializer.save(owner=self.request.user, end_date=end_date, ongoing=True)
 
@@ -506,6 +569,7 @@ class StrainViewSet(viewsets.ModelViewSet):
 
 # viewset for vr experiments
 class ScoreSheetViewSet(viewsets.ModelViewSet):
+    # TODO: add the visualizations
     target_model = ScoreSheet
 
     queryset = target_model.objects.all()
@@ -517,20 +581,48 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     lookup_field = 'slug'
 
+    # override the filter_queryset method from the generics to capture the search terms in session data
+    def filter_queryset(self, queryset):
+        # get the queryset (so effectively run the method normally)
+        queryset = super().filter_queryset(queryset)
+        # now fix it and save it in session data
+        queryset = save_session_data(self, queryset)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
         return HttpResponseRedirect('/loggers/')
 
-    def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def see_scoresheet(self, request, *args, **kwargs):
+        # get the mouse from the request
+        mouse = self.get_object().mouse
+        # get the other scoresheet objects from the same mouse
+        data = ScoreSheet.objects.filter(mouse=mouse)
+        # get the fields
+        search_fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
+        return HttpResponse(handson_table(request, data, search_fields))
 
-    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
-    def see_all_action(self, request, *args, **kwargs):
-        return HttpResponse(embedhandson_table(request))
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer], methods=['GET', 'POST'])
+    def import_scoresheet(self, request, *args, **kwargs):
+        return HttpResponse(import_data(request))
+
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def export_scoresheet(self, request, *args, **kwargs):
+        # get the mouse from the request
+        mouse = self.get_object().mouse
+        # get the other scoresheet objects from the same mouse
+        data = ScoreSheet.objects.filter(mouse=mouse)
+        # get the fields
+        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
+        return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
 
-# viewset for vr experiments
+# viewset for immuno stains
 class ImmunoStainViewSet(viewsets.ModelViewSet):
     target_model = ImmunoStain
 

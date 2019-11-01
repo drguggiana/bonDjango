@@ -10,5 +10,5 @@ from .views import dump_database, check_restriction
 def start():
     scheduler = BackgroundScheduler()
     scheduler.add_job(dump_database, 'interval', weeks=1)
-    scheduler.add_job(check_restriction, 'interval', seconds=300)
+    scheduler.add_job(check_restriction, 'interval', seconds=3000)
     scheduler.start()

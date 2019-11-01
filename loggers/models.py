@@ -37,6 +37,9 @@ class ExperimentType(models.Model):
     owner = models.ForeignKey('auth.User', related_name='experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
 
+    def __str__(self):
+        return self.experiment_name
+
 
 class Strain(models.Model):
     strain_name = models.CharField(max_length=200, default='C57Bl6', primary_key=True)
@@ -59,6 +62,9 @@ class MouseSet(models.Model):
     owner = models.ForeignKey('auth.User', related_name='mouseset', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
 
+    def __str__(self):
+        return self.mouse_set_name
+
 
 # mouse model
 class Mouse(models.Model):
@@ -73,7 +79,6 @@ class Mouse(models.Model):
     mouse_set = models.ForeignKey('MouseSet', related_name='mouse', on_delete=models.CASCADE, null=True)
     owner = models.ForeignKey('auth.User', related_name='mouse', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
-    # TODO: BooleanField to indicate if the animal is under food restriction, somehow check when period is over
 
     def __str__(self):
         return self.mouse_name
@@ -92,20 +97,20 @@ class ScoreSheet(models.Model):
     mouse = models.ForeignKey(Mouse, related_name='score_sheet', on_delete=models.CASCADE)
     owner = models.ForeignKey('auth.User', related_name='score_sheet', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
-    carprofen = models.CharField('Carprofen', max_length=3, choices=CARPRO_LIST)
+    carprofen = models.CharField('Carprofen', max_length=3, choices=CARPRO_LIST, default=zero)
     weight = models.FloatField('Weight (g)', default=0)
     food_consumed = models.FloatField('Food Consumed (g)', default=0)
-    behavior = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    posture_fur = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    water_food_uptake = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    general_condition = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    skin_turgor = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
+    behavior = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
+    posture_fur = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
+    water_food_uptake = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
+    general_condition = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
+    skin_turgor = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
 
     slug = models.SlugField(unique=True)
 
-    brain_surgery = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    lid_suture = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    inutero_electroporation = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
+    brain_surgery = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
+    # lid_suture = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
+    # inutero_electroporation = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
 
     notes = models.TextField(max_length=1000, default="N/A")
 
@@ -113,8 +118,10 @@ class ScoreSheet(models.Model):
         self.slug = slugify(str(self.sheet_date)[0:19])
         super().save(*args, **kwargs)
 
+    def __str__(self):
+        return self.slug
 
-# TODO: implement cache to not have to reenter every entry
+
 class Window(models.Model):
     # define the possible regions
     V1 = 'V1'
@@ -138,6 +145,12 @@ class Window(models.Model):
                               null=null_value, default=default_user)
     testPath = models.CharField(max_length=1000, default='N/A', null=True)
 
+    slug = models.SlugField(unique=True, default=timezone.now())
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(str(self.window_date)[0:19]+'_'+self.region+'_'+self.mouse.mouse_name)
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.mouse.mouse_name + '_' + self.region
 
@@ -159,7 +172,7 @@ class Surgery(models.Model):
                               null=null_value, default=default_user)
 
     def __str__(self):
-        return self.mouse.mouse_name+'_'+str(self.experiment_type.all()[0].authorization_name)
+        return self.mouse.mouse_name+'_'+str(self.experiment_type.all()[0].surgery_type)
 
 
 # duration as duration field
@@ -169,14 +182,20 @@ class RestrictionType(models.Model):
     water = 'Water'
 
     RESTRICTION_LIST = [(food, 'Food'), (water, 'Water')]
-    duration = models.IntegerField('Duration in days of the restriction in days', default=1)
+    duration = models.IntegerField('Duration of the restriction in days', default=1)
     restricted_element = models.CharField(max_length=100, default=food, choices=RESTRICTION_LIST)
     mouse_set = models.ForeignKey(MouseSet, related_name='restrictiontype', on_delete=models.CASCADE)
     owner = models.ForeignKey('auth.User', related_name='restrictiontype', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
 
-    # def __str__(self):
-    #     return self.mouse.mouse_name + '_' + str(self.experiment_type.all()[0].authorization_name)
+    slug_restrictionType = models.SlugField(unique=True, default=str(timezone.now()))
+
+    def save(self, *args, **kwargs):
+        self.slug_restrictionType = slugify(str(self.mouse_set.mouse_set_name) + '_' + str(self.restricted_element))
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.slug_restrictionType
 
 
 class Restriction(models.Model):
@@ -189,6 +208,14 @@ class Restriction(models.Model):
     notes = models.TextField(max_length=5000, default="N/A")
     owner = models.ForeignKey('auth.User', related_name='restriction', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
+    slug = models.SlugField(unique=True, default=str(timezone.now))
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(str(self.start_date)[0:19])
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.slug
 
 
 class Cricket(models.Model):

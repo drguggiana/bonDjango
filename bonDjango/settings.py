@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # 'funky_sheets',
     # 'easy_thumbnails',
     # 'mptt',
     # 'filer',
