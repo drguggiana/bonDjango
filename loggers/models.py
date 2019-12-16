@@ -93,8 +93,8 @@ class ScoreSheet(models.Model):
     SCORE_LIST = [(na, 'N/A'), (zero, '0'), (one, '1'), (two, '2')]
     CARPRO_LIST = [(zero, '0'), (one, '1')]
 
-    sheet_date = models.DateTimeField('date of scoring', default=timezone.now)
     mouse = models.ForeignKey(Mouse, related_name='score_sheet', on_delete=models.CASCADE)
+    sheet_date = models.DateTimeField('date of scoring', default=timezone.now)
     owner = models.ForeignKey('auth.User', related_name='score_sheet', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
     carprofen = models.CharField('Carprofen', max_length=3, choices=CARPRO_LIST, default=zero)
@@ -105,14 +105,11 @@ class ScoreSheet(models.Model):
     water_food_uptake = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
     general_condition = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
     skin_turgor = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
-
-    slug = models.SlugField(unique=True)
-
     brain_surgery = models.CharField(max_length=3, choices=SCORE_LIST, default="0")
-    # lid_suture = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
-    # inutero_electroporation = models.CharField(max_length=3, choices=SCORE_LIST, default="N/A")
 
     notes = models.TextField(max_length=1000, default="N/A")
+
+    slug = models.SlugField(unique=True)
 
     def save(self, *args, **kwargs):
         self.slug = slugify(str(self.sheet_date)[0:19])

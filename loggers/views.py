@@ -108,15 +108,19 @@ def check_restriction():
 
 # # function to render the scoresheets as part of the template
 def handson_table(request, query_sets, fields):
-    # return excel.make_response_from_tables([ScoreSheet], 'handsontable.html')
-    return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
-    # return render(
-    #     request,
-    #     'custom-handson-table.html',
-    #     {
-    #         'handsontable_content': excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
-    #     })
-    # content = excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+    # return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+
+    content = excel.pe.save_as(table=query_sets,
+                               dest_file_type='handsontable.html',
+                               dest_embed=True)
+    content.seek(0)
+
+    return render(
+        request,
+        'custom-handson-table.html',
+        {
+            'handsontable_content': content.read()
+        })
     # return Response({'handsontable_content': render(content)}, template_name='custom-handson-table.html')
 
 
@@ -599,13 +603,14 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def see_scoresheet(self, request, *args, **kwargs):
+        # TODO: figure out how to properly embed the table in a template
         # get the mouse from the request
         mouse = self.get_object().mouse
         # get the other scoresheet objects from the same mouse
         data = ScoreSheet.objects.filter(mouse=mouse)
         # get the fields
-        search_fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
-        return HttpResponse(handson_table(request, data, search_fields))
+        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name'])
+        return HttpResponse(handson_table(request, data, fields))
 
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer], methods=['GET', 'POST'])
     def import_scoresheet(self, request, *args, **kwargs):
@@ -618,7 +623,8 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
         # get the other scoresheet objects from the same mouse
         data = ScoreSheet.objects.filter(mouse=mouse)
         # get the fields
-        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
+        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name'])
+        print(fields)
         return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
 
