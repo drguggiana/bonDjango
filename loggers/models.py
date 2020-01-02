@@ -215,16 +215,25 @@ class Restriction(models.Model):
         return self.slug
 
 
-class Cricket(models.Model):
+class VideoExperiment(models.Model):
+    mouse = models.ForeignKey(Mouse, related_name='video_experiment', on_delete=models.CASCADE)
     date = models.DateTimeField('date of the experiment', default=timezone.now)
-    stimulus = models.CharField(max_length=200, default="N/A")
-    notes = models.TextField(max_length=1000, default="N/A")
-    path = models.CharField(max_length=200, default="N/A")
-    owner = models.ForeignKey('auth.User', related_name='cricket', on_delete=models.CASCADE,
+    result = models.CharField(max_length=200, default="N/A")
+    lighting = models.CharField(max_length=200, default="N/A")
+    miniscope = models.CharField(max_length=200, default="N/A")
+
+    sync_path = models.CharField(max_length=200, default="N/A")
+    bonsai_path = models.CharField(max_length=200, default="N/A")
+    avi_path = models.CharField(max_length=200, default="N/A")
+    fluo_path = models.CharField(max_length=200, default="N/A")
+
+    owner = models.ForeignKey('auth.User', related_name='video_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
+    notes = models.TextField(max_length=5000, default="N/A")
+    experiment_type = models.ManyToManyField('ExperimentType', related_name='videoexperiment_type')
 
     def __str__(self):
-        return self.date+'_'+self.stimulus
+        return '_'.join((self.mouse.mouse_name, self.result, self.lighting))
 
 
 class TwoPhoton(models.Model):
@@ -259,17 +268,23 @@ class IntrinsicImaging(models.Model):
 class VRExperiment(models.Model):
     mouse = models.ForeignKey(Mouse, related_name='vr_experiment', on_delete=models.CASCADE)
     date = models.DateTimeField('date of the experiment', default=timezone.now)
-    stimulus = models.CharField(max_length=200, default="N/A")
-    fluorescencePath = models.CharField(max_length=200, default="N/A")
-    trackPath = models.CharField(max_length=200, default="N/A")
-    stimulusPath = models.CharField(max_length=200, default="N/A")
+    result = models.CharField(max_length=200, default="N/A")
+    lighting = models.CharField(max_length=200, default="N/A")
+    miniscope = models.CharField(max_length=200, default="N/A")
+
+    sync_path = models.CharField(max_length=200, default="N/A")
+    track_path = models.CharField(max_length=200, default="N/A")
+    bonsai_path = models.CharField(max_length=200, default="N/A")
+    avi_path = models.CharField(max_length=200, default="N/A")
+    fluo_path = models.CharField(max_length=200, default="N/A")
+
     owner = models.ForeignKey('auth.User', related_name='vr_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
     notes = models.TextField(max_length=5000, default="N/A")
     experiment_type = models.ManyToManyField('ExperimentType', related_name='vrexperiment_type')
 
     def __str__(self):
-        return self.mouse.mouse_name+'_'+self.stimulus
+        return '_'.join((self.mouse.mouse_name, self.result, self.lighting))
 
 
 class ImmunoStain(models.Model):

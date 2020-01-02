@@ -10,6 +10,7 @@ from PIL import Image, ImageOps
 
 # used to make paths below
 from os.path import join
+from os import listdir
 
 # django imports for the scheduler and direct linking
 from django.core import management
@@ -32,9 +33,11 @@ from .forms import form_dict
 from .paths import backup_path
 from .permissions import IsOwnerOrReadOnly
 from .serializers import *
+from . import models
 
 import django_excel as excel
 from django.shortcuts import render, redirect
+from django.apps import apps
 
 
 # snippet to convert camel case to snake case via regex
@@ -108,19 +111,18 @@ def check_restriction():
 
 # # function to render the scoresheets as part of the template
 def handson_table(request, query_sets, fields):
-    # return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
+    return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
 
-    content = excel.pe.save_as(table=query_sets,
-                               dest_file_type='handsontable.html',
-                               dest_embed=True)
-    content.seek(0)
-
-    return render(
-        request,
-        'custom-handson-table.html',
-        {
-            'handsontable_content': content.read()
-        })
+    # content = excel.pe.save_as(source=query_sets,
+    #                            dest_file_type='handsontable.html',
+    #                            dest_embed=True)
+    # content.seek(0)
+    # return render(
+    #     request,
+    #     'custom-handson-table.html',
+    #     {
+    #         'handsontable_content': content.read()
+    #     })
     # return Response({'handsontable_content': render(content)}, template_name='custom-handson-table.html')
 
 
@@ -148,9 +150,17 @@ def import_data(request):
         def na_remover(row):
             row = [0 if el == 'N/A' else el for el in row]
             return row
+
+        def mouse_namer(row):
+            q = Mouse.objects.filter(mouse_name=row[-2])[0]
+            row[-2] = q
+            p = User.objects.filter(username=row[-1])[0]
+            row[-1] = p
+            return row
         if form.is_valid():
-            request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[na_remover],
-                                                        mapdicts=[search_fields.sort()])
+            request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[mouse_namer],
+                                                        mapdicts=[search_fields+['mouse', 'owner']])
+                                                        # mapdicts=[search_fields.sort()])
             return HttpResponse(embedhandson_table(request))
         else:
             return HttpResponseBadRequest()
@@ -199,6 +209,53 @@ def load_session_data(self, request):
     # filter the queryset with the updated search terms
     data = self.filter_queryset(self.get_queryset())
     return data
+
+
+def check_files(current_user=None):
+    """Function that runs periodically, checking that the paths in the database actually lead to files"""
+    # TODO: add callable version for particular user
+    # TODO: save the user of the missing files
+    # TODO: set up file saving of the list of missing files
+    # TODO: check date modified/size
+    # get the paths in the database
+    app_models = apps.get_app_config('loggers').get_models()
+    # allocate a list to store the database paths
+    database_paths = []
+    # get the logged in user
+    # current_user
+    # for all the models
+    for model in app_models:
+        # if it's the profile, skip it
+        if model.__name__ == 'Profile':
+            continue
+        # get a list of the fields in this model
+        fields = model._meta.fields
+        # extract only the fields that correspond to paths
+        fields = [el.name for el in fields if 'path' in el.name]
+        # if the model contains such a field and there's a non-null entry
+        if (len(fields) > 0) & (len(model.objects.values_list(*fields)) > 0):
+            # append the paths to a global list
+            database_paths.append(list(model.objects.values_list(*fields)[0]))
+    # flatten the list
+    # print([el for sublist in database_paths for el in sublist])
+    database_paths = [el for sublist in database_paths for el in sublist]
+    print(database_paths)
+    # get the paths in the file system
+
+    # # get the paths from the profile
+    # fields = [el for el in models.Profile._meta.fields if 'path' in el.name]
+    # fields = [el for el in fields if 'main' not in el.name]
+    # # fields.remove('main_path')
+    # # allocate a list for the physical files
+    # physical_list = []
+    # # run through the profile instances checking the paths
+    # for profiles in models.Profile.objects.all():
+    #     # for the fields
+    #     for field in fields:
+    #         physical_list.append(field.value_from_object(profiles))
+    #         print(listdir(field.value_from_object(profiles)))
+    # print(physical_list)
+    return None
 
 
 class UploadFileForm(forms.Form):
@@ -437,8 +494,8 @@ class RestrictionViewSet(viewsets.ModelViewSet):
 
 
 # viewset for crickets
-class CricketViewSet(viewsets.ModelViewSet):
-    target_model = Cricket
+class VideoExperimentViewSet(viewsets.ModelViewSet):
+    target_model = VideoExperiment
 
     queryset = target_model.objects.all()
     serializer_class = eval(target_model.__name__+'Serializer')
@@ -453,6 +510,7 @@ class CricketViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect('/loggers/')
 
     def perform_create(self, serializer):
+        # TODO: include the name parsing from the vr experiments
         serializer.save(owner=self.request.user)
 
 
@@ -512,8 +570,70 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
         labfolder_entry(self)
         return HttpResponseRedirect('/loggers/')
 
+    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    def load_batch(self, request, *args, **kwargs):
+        """Select several files from a file dialog to create entries"""
+        # TODO: make it so it doesn't overwrite entries
+
+        return HttpResponseRedirect('/loggers/')
+
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        # TODO: make the name parsing date dependent for retrocompatibility
+
+        # get the file name from the entry and split into parts
+        proto_path = str(self.request.data['Select file'])[:-4]
+        name_parts = proto_path.split('_')
+        # get the base path for the current model
+        base_path = self.request.user.profile.VRExperiment_path
+        # get the different parameters from the model
+        # get the date
+        date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
+        # get the animal
+        animal = models.Mouse.objects.get(mouse_name='_'.join(name_parts[6:9]))
+        # get the result
+        result = name_parts[9]
+        # check if there is a lighting condition
+        if len(name_parts) > 10:
+            lighting = name_parts[10]
+        else:
+            lighting = 'normal'
+
+        # check if there is a miniscope condition
+        if len(name_parts) > 11:
+            miniscope = name_parts[11]
+            # define the miniscope path
+            fluo_path = '//'.join((base_path, proto_path + '.csv'))
+        else:
+            miniscope = 'no'
+            fluo_path = ''
+
+        # add any extra info as notes
+        if len(name_parts) > 12:
+            notes = name_parts[12]
+        else:
+            notes = ''
+
+        # define the path for the bonsai file
+        bonsai_path = '//'.join((base_path, proto_path + '.csv'))
+        # define the path for the avi file
+        avi_path = '//'.join((base_path, proto_path + '.avi'))
+        # define the path for the tracking file
+        track_path = '//'.join((base_path, proto_path + '.txt'))
+        # define the path for the sync file
+        sync_path = '//'.join((base_path, proto_path + '.csv'))
+        # save the instance
+        serializer.save(owner=self.request.user,
+                        mouse=animal,
+                        date=date,
+                        result=result,
+                        lighting=lighting,
+                        miniscope=miniscope,
+                        bonsai_path=bonsai_path,
+                        avi_path=avi_path,
+                        track_path=track_path,
+                        sync_path=sync_path,
+                        fluo_path=fluo_path,
+                        notes=notes)
 
 
 # viewset for vr experiments
@@ -618,13 +738,14 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def export_scoresheet(self, request, *args, **kwargs):
+        # remember to install the required pyexcel format variants
         # get the mouse from the request
         mouse = self.get_object().mouse
         # get the other scoresheet objects from the same mouse
         data = ScoreSheet.objects.filter(mouse=mouse)
         # get the fields
-        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name'])
-        print(fields)
+        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
+                                                                                          'owner__username'])
         return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
 

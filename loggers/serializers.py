@@ -27,6 +27,8 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
     intrinsic_imaging = serializers.HyperlinkedRelatedField(many=True,
                                                             view_name='intrinsicimaging-detail', read_only=True)
     vr_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='vrexperiment-detail', read_only=True)
+    video_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='videoexperiment-detail', read_only=True)
+
     score_sheet = serializers.HyperlinkedRelatedField(many=True, view_name='scoresheet-detail', read_only=True,
                                                       lookup_field='slug')
     immuno_stain = serializers.HyperlinkedRelatedField(many=True, view_name='immunostain-detail', read_only=True)
@@ -132,13 +134,15 @@ class RestrictionSerializer(serializers.HyperlinkedModelSerializer):
         extra_kwargs['restriction_type'] = {'lookup_field': 'slug_restrictionType'}
 
 
-class CricketSerializer(serializers.HyperlinkedModelSerializer):
+class VideoExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
 
     class Meta:
-        model = Cricket
+        model = VideoExperiment
         fields = ([f.name for f in model._meta.get_fields()])
         fields = sort_fields(fields)
+
+        extra_kwargs = common_extra_kwargs.copy()
 
 
 class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
@@ -165,6 +169,7 @@ class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
 
 class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
+    bonsai_path = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
 
     class Meta:
         model = VRExperiment
@@ -259,6 +264,7 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
         model = ExperimentType
         fields = ([f.name for f in model._meta.get_fields()])
         fields = sort_fields(fields)
+        extra_kwargs = {'users': {'lookup_field': 'username'}}
 
 
 # obtained from https://www.django-rest-framework.org/api-guide/serializers/#example
