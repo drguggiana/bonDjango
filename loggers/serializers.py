@@ -26,7 +26,8 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
     two_photon = serializers.HyperlinkedRelatedField(many=True, view_name='twophoton-detail', read_only=True)
     intrinsic_imaging = serializers.HyperlinkedRelatedField(many=True,
                                                             view_name='intrinsicimaging-detail', read_only=True)
-    vr_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='vrexperiment-detail', read_only=True)
+    vr_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='vrexperiment-detail', read_only=True,
+                                                        lookup_field='slug')
     video_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='videoexperiment-detail', read_only=True)
 
     score_sheet = serializers.HyperlinkedRelatedField(many=True, view_name='scoresheet-detail', read_only=True,
@@ -174,9 +175,11 @@ class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = VRExperiment
         fields = ([f.name for f in model._meta.get_fields()])
+        fields.remove('slug')
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug'}
 
 
 class ProjectSerializer(serializers.HyperlinkedModelSerializer):

@@ -2,6 +2,7 @@ from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
 from django.contrib.auth.models import User
+from os.path import basename
 
 
 null_value = False
@@ -283,8 +284,14 @@ class VRExperiment(models.Model):
     notes = models.TextField(max_length=5000, default="N/A")
     experiment_type = models.ManyToManyField('ExperimentType', related_name='vrexperiment_type')
 
+    slug = models.SlugField(unique=True, default=str(timezone.now))
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(basename(str(self.bonsai_path)[:-4]))
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return '_'.join((self.mouse.mouse_name, self.result, self.lighting))
+        return self.slug
 
 
 class ImmunoStain(models.Model):

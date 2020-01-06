@@ -33,7 +33,6 @@ from .forms import form_dict
 from .paths import backup_path
 from .permissions import IsOwnerOrReadOnly
 from .serializers import *
-from . import models
 
 import django_excel as excel
 from django.shortcuts import render, redirect
@@ -256,6 +255,68 @@ def check_files(current_user=None):
     #         print(listdir(field.value_from_object(profiles)))
     # print(physical_list)
     return None
+
+
+def parse_path(proto_path, instance, txt_list=None):
+    """Parse the model arguments from the file name"""
+
+    # split the file name into parts
+    name_parts = proto_path.split('_')
+    # get the base path for the current model
+    base_path = instance.request.user.profile.VRExperiment_path
+    # get the different parameters from the model
+    # get the date
+    date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
+    # get the animal
+    animal = Mouse.objects.get(mouse_name='_'.join(name_parts[6:9]))
+    # get the result
+    result = name_parts[9]
+    # check if there is a lighting condition
+    if len(name_parts) > 10:
+        lighting = name_parts[10]
+    else:
+        lighting = 'normal'
+
+    # check if there is a miniscope condition
+    if len(name_parts) > 11:
+        miniscope = name_parts[11]
+        # define the miniscope path
+        fluo_path = join(base_path, proto_path + '.csv')
+    else:
+        miniscope = 'no'
+        fluo_path = ''
+
+    # add any extra info as notes
+    if len(name_parts) > 12:
+        notes = '_'.join((name_parts[12:]))
+    else:
+        notes = ''
+
+    # define the path for the bonsai file
+    bonsai_path = join(base_path, proto_path + '.csv')
+    # define the path for the avi file
+    avi_path = join(base_path, proto_path + '.avi')
+    # define the path for the tracking and sync file depending on date
+    if date > datetime.datetime(year=2019, month=11, day=10):
+        track_path = join(base_path, proto_path + '.txt')
+        # define the path for the sync file
+        sync_path = join(base_path, proto_path + '.csv')
+    else:
+        track_path = ''
+        sync_path = ''
+    
+    return {'owner': instance.request.user,
+            'mouse': animal,
+            'date': date,
+            'result': result,
+            'lighting': lighting,
+            'miniscope': miniscope,
+            'bonsai_path': bonsai_path,
+            'avi_path': avi_path,
+            'track_path': track_path,
+            'sync_path': sync_path,
+            'fluo_path': fluo_path,
+            'notes': notes}
 
 
 class UploadFileForm(forms.Form):
@@ -565,75 +626,48 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     filter_backends = (filters.SearchFilter,)
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
+    lookup_field = 'slug'
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
         return HttpResponseRedirect('/loggers/')
 
-    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def load_batch(self, request, *args, **kwargs):
         """Select several files from a file dialog to create entries"""
-        # TODO: make it so it doesn't overwrite entries
+        # get a list of the files in the associated path
+        base_path = self.request.user.profile.VRExperiment_path
+        file_list = listdir(base_path)
+        # include only csv files
+        file_list = [el[:-4] for el in file_list if '.csv' in el]
+        # get a list of the existing file names (bonsai)
+        existing_rows = [el[0] for el in VRExperiment.objects.values_list('slug')]
+        # for all the files
+        for file in file_list:
+            # check if the entry already exists
+            if file.lower() in existing_rows:
+                # if so, skip making a new one
+                continue
+            # get the data for the entry
+            data_dict = parse_path(file, self)
+            # create the model instance with the data
+            model_instance = VRExperiment.objects.create(**data_dict)
+            # get the model for the experiment type to use
+            experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
+            # add the experiment type to the model instance (must use set() cause m2m)
+            model_instance.experiment_type.set(experiment_type)
+            # save the model instance
+            model_instance.save()
 
         return HttpResponseRedirect('/loggers/')
 
     def perform_create(self, serializer):
         # TODO: make the name parsing date dependent for retrocompatibility
-
-        # get the file name from the entry and split into parts
+        # get the file name from the entry
         proto_path = str(self.request.data['Select file'])[:-4]
-        name_parts = proto_path.split('_')
-        # get the base path for the current model
-        base_path = self.request.user.profile.VRExperiment_path
-        # get the different parameters from the model
-        # get the date
-        date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
-        # get the animal
-        animal = models.Mouse.objects.get(mouse_name='_'.join(name_parts[6:9]))
-        # get the result
-        result = name_parts[9]
-        # check if there is a lighting condition
-        if len(name_parts) > 10:
-            lighting = name_parts[10]
-        else:
-            lighting = 'normal'
-
-        # check if there is a miniscope condition
-        if len(name_parts) > 11:
-            miniscope = name_parts[11]
-            # define the miniscope path
-            fluo_path = '//'.join((base_path, proto_path + '.csv'))
-        else:
-            miniscope = 'no'
-            fluo_path = ''
-
-        # add any extra info as notes
-        if len(name_parts) > 12:
-            notes = name_parts[12]
-        else:
-            notes = ''
-
-        # define the path for the bonsai file
-        bonsai_path = '//'.join((base_path, proto_path + '.csv'))
-        # define the path for the avi file
-        avi_path = '//'.join((base_path, proto_path + '.avi'))
-        # define the path for the tracking file
-        track_path = '//'.join((base_path, proto_path + '.txt'))
-        # define the path for the sync file
-        sync_path = '//'.join((base_path, proto_path + '.csv'))
         # save the instance
-        serializer.save(owner=self.request.user,
-                        mouse=animal,
-                        date=date,
-                        result=result,
-                        lighting=lighting,
-                        miniscope=miniscope,
-                        bonsai_path=bonsai_path,
-                        avi_path=avi_path,
-                        track_path=track_path,
-                        sync_path=sync_path,
-                        fluo_path=fluo_path,
-                        notes=notes)
+        serializer.save(**parse_path(proto_path, self))
 
 
 # viewset for vr experiments
