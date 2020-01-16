@@ -271,7 +271,7 @@ class VRExperiment(models.Model):
     date = models.DateTimeField('date of the experiment', default=timezone.now)
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
-    miniscope = models.CharField(max_length=200, default="N/A")
+    rig = models.CharField(max_length=200, default="N/A")
 
     sync_path = models.CharField(max_length=200, default="N/A")
     track_path = models.CharField(max_length=200, default="N/A")

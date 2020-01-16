@@ -9,7 +9,7 @@ from io import BytesIO
 from PIL import Image, ImageOps
 
 # used to make paths below
-from os.path import join
+from os.path import join, exists
 from os import listdir
 
 # django imports for the scheduler and direct linking
@@ -267,28 +267,58 @@ def parse_path(proto_path, instance, txt_list=None):
     # get the different parameters from the model
     # get the date
     date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
+    # initialize list for second animal coordinates
+    is_animal2 = False
+    # set the position counter
+    animal_last = 8
+    # check if there is a miniscope condition
+    if name_parts[6] in ['miniscope', 'social', 'other']:
+        rig = name_parts[6]
+        # set the coordinates of the animal name
+        # animal_last = 9
+
+        if rig == 'miniscope':
+            # define the miniscope path
+            fluo_path = join(base_path, proto_path + '.csv')
+        elif rig == 'social':
+            fluo_path = ''
+            is_animal2 = True
+        else:
+            rig = 'other'
+            fluo_path = ''
+
+        # increase the counter
+        animal_last += 1
+    else:
+        rig = 'VR'
+        fluo_path = ''
+        # animal_last = 8
+
     # get the animal
-    animal = Mouse.objects.get(mouse_name='_'.join(name_parts[6:9]))
+    animal = Mouse.objects.get(mouse_name='_'.join(name_parts[animal_last-2:animal_last+1]))
+    # get the second animal if present
+    if is_animal2:
+        animal2 = Mouse.objects.get(mouse_name='_'.join(name_parts[animal_last+1:animal_last + 3]))
+        animal_last += 3
+    else:
+        animal2 = ''
+    # increase the counter
+    animal_last += 1
     # get the result
-    result = name_parts[9]
+    result = name_parts[animal_last]
+    # increase the counter
+    animal_last += 1
     # check if there is a lighting condition
-    if len(name_parts) > 10:
-        lighting = name_parts[10]
+    if (len(name_parts) > animal_last) and (name_parts[animal_last] in ['dark']):
+        lighting = name_parts[animal_last]
+        # increase the counter
+        animal_last += 1
     else:
         lighting = 'normal'
 
-    # check if there is a miniscope condition
-    if len(name_parts) > 11:
-        miniscope = name_parts[11]
-        # define the miniscope path
-        fluo_path = join(base_path, proto_path + '.csv')
-    else:
-        miniscope = 'no'
-        fluo_path = ''
-
     # add any extra info as notes
-    if len(name_parts) > 12:
-        notes = '_'.join((name_parts[12:]))
+    if len(name_parts) > animal_last:
+        notes = '_'.join((name_parts[animal_last:]))
     else:
         notes = ''
 
@@ -296,27 +326,28 @@ def parse_path(proto_path, instance, txt_list=None):
     bonsai_path = join(base_path, proto_path + '.csv')
     # define the path for the avi file
     avi_path = join(base_path, proto_path + '.avi')
-    # define the path for the tracking and sync file depending on date
-    if date > datetime.datetime(year=2019, month=11, day=10):
-        track_path = join(base_path, proto_path + '.txt')
-        # define the path for the sync file
-        sync_path = join(base_path, proto_path + '.csv')
+    # # define the path for the tracking and sync file depending on date
+    track_path = join(base_path, proto_path + '.txt')
+    # define the path for the sync file
+    sync_path = join(base_path, proto_path + '.csv')
+    if rig == 'miniscope':
+        sync_path = sync_path.replace('miniscope', 'syncMini')
     else:
-        track_path = ''
-        sync_path = ''
+        sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
     
     return {'owner': instance.request.user,
             'mouse': animal,
             'date': date,
             'result': result,
             'lighting': lighting,
-            'miniscope': miniscope,
+            'rig': rig,
             'bonsai_path': bonsai_path,
             'avi_path': avi_path,
             'track_path': track_path,
             'sync_path': sync_path,
             'fluo_path': fluo_path,
-            'notes': notes}
+            'notes': notes,
+            'animal2': animal2}
 
 
 class UploadFileForm(forms.Form):
@@ -623,7 +654,9 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (filters.SearchFilter, filters.OrderingFilter,)
+    ordering = ['date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     lookup_field = 'slug'
@@ -640,7 +673,7 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
         base_path = self.request.user.profile.VRExperiment_path
         file_list = listdir(base_path)
         # include only csv files
-        file_list = [el[:-4] for el in file_list if '.csv' in el]
+        file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
         # get a list of the existing file names (bonsai)
         existing_rows = [el[0] for el in VRExperiment.objects.values_list('slug')]
         # for all the files
@@ -651,6 +684,12 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
                 continue
             # get the data for the entry
             data_dict = parse_path(file, self)
+            # get rid of the animal2 entry
+            del data_dict['animal2']
+            # check the paths in the filesystem, otherwise leave the entry empty
+            for key, value in data_dict.items():
+                if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                    data_dict[key] = ''
             # create the model instance with the data
             model_instance = VRExperiment.objects.create(**data_dict)
             # get the model for the experiment type to use
@@ -660,7 +699,7 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
             # save the model instance
             model_instance.save()
 
-        return HttpResponseRedirect('/loggers/')
+        return HttpResponseRedirect('/loggers/vr_experiment/')
 
     def perform_create(self, serializer):
         # TODO: make the name parsing date dependent for retrocompatibility
