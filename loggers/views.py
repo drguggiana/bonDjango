@@ -38,6 +38,8 @@ import django_excel as excel
 from django.shortcuts import render, redirect
 from django.apps import apps
 
+from .filters import DynamicSearchFilter
+
 
 # snippet to convert camel case to snake case via regex
 def convert(name):
@@ -156,7 +158,16 @@ def import_data(request):
             p = User.objects.filter(username=row[-1])[0]
             row[-1] = p
             return row
+
+        def fix_format(row):
+            # read the different sheets
+            slug_field = slugify(str(row[1])[0:19])
+            return row
         if form.is_valid():
+            print(request.FILES['file'])
+
+            def save_book_as(**keywords):
+                return
             request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[mouse_namer],
                                                         mapdicts=[search_fields+['mouse', 'owner']])
                                                         # mapdicts=[search_fields.sort()])
@@ -654,7 +665,7 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter, filters.OrderingFilter,)
+    filter_backends = (DynamicSearchFilter, )
     ordering = ['date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
@@ -819,6 +830,15 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
         # get the fields
         fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
                                                                                           'owner__username'])
+        return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
+
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def export_all(self, request, *args, **kwargs):
+        # get the license from thie animsl
+        # get the user from this animal
+        # get all the mice from this license and user
+        # get the corresponding scoresheets
+        # get the fields
         return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
 
