@@ -833,13 +833,20 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
         return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
-    def export_all(self, request, *args, **kwargs):
-        # get the license from thie animsl
+    def export_to_network(self, request, *args, **kwargs):
+        # get the license from this animal
+        license_object = self.get_object().mouse.mouse_set.license
         # get the user from this animal
+        user_object = license_object.owner
         # get all the mice from this license and user
+        # first get the mouse_sets
+        mouse_sets = MouseSet.objects.filter(owner=user_object, license=license_object)
+        # now get the mice within this mouse set
+        mice = [el.mouse.get() for el in mouse_sets]
+        print(mice)
         # get the corresponding scoresheets
         # get the fields
-        return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
+        return HttpResponseRedirect('/loggers/score_sheet/')
 
 
 # viewset for immuno stains
