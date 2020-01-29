@@ -842,9 +842,12 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
         # first get the mouse_sets
         mouse_sets = MouseSet.objects.filter(owner=user_object, license=license_object)
         # now get the mice within this mouse set
-        mice = [el.mouse.get() for el in mouse_sets]
-        print(mice)
+        mice = [list(el.mouse.all()) for el in mouse_sets]
+        # flatten the list
+        mice = [el for sublist in mice for el in sublist]
         # get the corresponding scoresheets
+        scoresheets = [list(el.score_sheet.all()) for el in mice]
+        print(scoresheets)
         # get the fields
         return HttpResponseRedirect('/loggers/score_sheet/')
 
