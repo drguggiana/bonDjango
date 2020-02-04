@@ -8,6 +8,9 @@ common_extra_kwargs = {'mouse': {'lookup_field': 'mouse_name'}}
 
 # define a function to put the url first and then sort all the other fields
 def sort_fields(fields):
+    # if 'mouse' in fields:
+    #     sorted_fields = (['url', 'mouse'] + sorted(fields).remove('mouse'))
+    # else:
     sorted_fields = (['url'] + sorted(fields))
     return sorted_fields
 
@@ -22,13 +25,15 @@ class MouseSerializer(serializers.HyperlinkedModelSerializer):
     # whether it's read only or not as default
     window = serializers.HyperlinkedRelatedField(many=True, view_name='window-detail', read_only=True,
                                                  lookup_field='slug')
-    surgery = serializers.HyperlinkedRelatedField(many=True, view_name='surgery-detail', read_only=True)
+    surgery = serializers.HyperlinkedRelatedField(many=True, view_name='surgery-detail', read_only=True,
+                                                  lookup_field='slug')
     two_photon = serializers.HyperlinkedRelatedField(many=True, view_name='twophoton-detail', read_only=True)
     intrinsic_imaging = serializers.HyperlinkedRelatedField(many=True,
                                                             view_name='intrinsicimaging-detail', read_only=True)
     vr_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='vrexperiment-detail', read_only=True,
                                                         lookup_field='slug')
-    video_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='videoexperiment-detail', read_only=True)
+    video_experiment = serializers.HyperlinkedRelatedField(many=True, view_name='videoexperiment-detail', read_only=True
+                                                           , lookup_field='slug')
 
     score_sheet = serializers.HyperlinkedRelatedField(many=True, view_name='scoresheet-detail', read_only=True,
                                                       lookup_field='slug')
@@ -103,6 +108,7 @@ class SurgerySerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug'}
 
 
 class RestrictionTypeSerializer(serializers.HyperlinkedModelSerializer):
@@ -144,6 +150,7 @@ class VideoExperimentSerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
+        extra_kwargs['url'] = {'lookup_field': 'slug'}
 
 
 class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
@@ -170,7 +177,7 @@ class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
 
 class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    bonsai_path = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
+    # bonsai_path = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
 
     class Meta:
         model = VRExperiment
@@ -267,7 +274,17 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
         model = ExperimentType
         fields = ([f.name for f in model._meta.get_fields()])
         fields = sort_fields(fields)
-        extra_kwargs = {'users': {'lookup_field': 'username'}}
+        extra_kwargs = {'users': {'lookup_field': 'username'},
+                        'vrexperiment_type': {'lookup_field': 'slug'},
+                        'videoexperiment_type': {'lookup_field': 'slug'}}
+
+
+class GeneralSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = None
+        fields = None
+        extra_kwargs = None
 
 
 # obtained from https://www.django-rest-framework.org/api-guide/serializers/#example

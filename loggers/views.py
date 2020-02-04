@@ -39,6 +39,7 @@ from django.shortcuts import render, redirect
 from django.apps import apps
 
 from .filters import DynamicSearchFilter
+import pyexcel as pe
 
 
 # snippet to convert camel case to snake case via regex
@@ -268,13 +269,13 @@ def check_files(current_user=None):
     return None
 
 
-def parse_path(proto_path, instance, txt_list=None):
+def parse_path(proto_path, instance, model_path):
     """Parse the model arguments from the file name"""
 
     # split the file name into parts
     name_parts = proto_path.split('_')
     # get the base path for the current model
-    base_path = instance.request.user.profile.VRExperiment_path
+    base_path = eval('instance.request.user.profile.'+model_path)
     # get the different parameters from the model
     # get the date
     date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
@@ -361,6 +362,58 @@ def parse_path(proto_path, instance, txt_list=None):
             'animal2': animal2}
 
 
+def general_serializer(instance):
+    # get the serializer for this model
+    serializer_class = eval(instance.target_model.__name__ + 'Serializer')
+
+    if instance.action == 'retrieve':
+        # if it's the detail view, just return the standard serializer
+        return serializer_class
+    else:  # if not, modify it to remove unnecessary fields from the list view
+
+        # copy the attributes to the generalized serializer
+        GeneralSerializer._declared_fields = serializer_class._declared_fields.copy()
+        GeneralSerializer.Meta.fields = serializer_class.Meta.fields.copy()
+        GeneralSerializer.Meta.extra_kwargs = serializer_class.Meta.extra_kwargs.copy()
+        GeneralSerializer.Meta.model = instance.target_model
+        # allocate a list of the fields to remove from the list view
+        remove_fields = []
+        # for all the fields in the serializer
+        for fields in GeneralSerializer.Meta.fields:
+
+            # remove the if field (since it's not in declared_fields)
+            if fields in ['id', 'slug']:
+                # eliminate the field from the serializer
+                remove_fields.append(fields)
+                continue
+            if instance.target_model.__name__ != 'Mouse' and fields == 'mouse':
+                # remove the current mouse extra_kwargs so it displays
+                del GeneralSerializer.Meta.extra_kwargs[fields]
+                continue
+            # remove the fields that have been assigned as read only
+            if (fields in serializer_class._declared_fields.keys()) and \
+               (('read_only=True' in str(GeneralSerializer._declared_fields[fields])) or
+               ('ReadOnly' in str(GeneralSerializer._declared_fields[fields]))):
+
+                # eliminate the field from the serializer
+                remove_fields.append(fields)
+                # remove the field from declared fields
+                del GeneralSerializer._declared_fields[fields]
+                continue
+
+            GeneralSerializer.Meta.extra_kwargs[fields] = {'write_only': True}
+
+        # remove the read only fields
+        GeneralSerializer.Meta.fields = [el for el in GeneralSerializer.Meta.fields if el not in remove_fields]
+        # overwrite url kwargs, since it is set by default to read only
+        GeneralSerializer.Meta.extra_kwargs['url'] = {'lookup_field': instance.lookup_field}
+        # put the mouse entry at the top
+        if 'mouse' in GeneralSerializer.Meta.fields:
+            GeneralSerializer.Meta.fields.remove('mouse')
+            GeneralSerializer.Meta.fields = ['mouse'] + GeneralSerializer.Meta.fields
+        return GeneralSerializer
+
+
 class UploadFileForm(forms.Form):
     file = forms.FileField()
 
@@ -382,7 +435,7 @@ class ProfileViewSet(viewsets.ModelViewSet):
     # define the corresponding serializer
     serializer_class = ProfileSerializer
     # define the permissions structure
-    permission_classes = (IsAdminUser, )
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly, )
 
     def perform_create(self, serializer):
         # populate the path fields
@@ -409,16 +462,18 @@ class MouseViewSet(viewsets.ModelViewSet):
     # pass all the model objects to the viewset
     queryset = target_model.objects.all()
     # define the corresponding serializer
-    serializer_class = eval(target_model.__name__+'Serializer')
+    # serializer_class = eval(target_model.__name__+'Serializer')
     # define the permissions structure
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
     # define the filtering backend (i.e. for searching)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter,)
+    ordering = ['-dob']
+    ordering_fields = ['dob']
     # define the search fields to look through when filtering
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation] +
-                     ['window__region', 'surgery__notes', 'vr_experiment__notes', 'vr_experiment__stimulus',
-                      'vr_experiment__notes', 'intrinsic_imaging__stimulus'])
+                     ['window__region', 'surgery__notes', 'vr_experiment__notes', 'video_experiment__notes',
+                      'owner__username'])
     # specify the modified lookup_field if not using id, needs to be both here and in the serializer itself
     lookup_field = 'mouse_name'
 
@@ -442,6 +497,9 @@ class MouseViewSet(viewsets.ModelViewSet):
             serializer.save(owner=self.request.user, strain_name=mouse_set_instance.strain_id)
         else:
             raise PermissionDenied({'message': 'Max number of mice reached on this set'})
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 
     # extra action to generate a labfolder entry from the current mouse
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
@@ -517,8 +575,12 @@ class SurgeryViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    lookup_field = 'slug'
 
     def get_permissions(self):
         if self.action == 'create' and 'experiment_type' in self.request.data:
@@ -538,6 +600,9 @@ class SurgeryViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -604,8 +669,15 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -613,8 +685,44 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect('/loggers/')
 
     def perform_create(self, serializer):
-        # TODO: include the name parsing from the vr experiments
         serializer.save(owner=self.request.user)
+
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def load_batch(self, request, *args, **kwargs):
+        """Select several files from a file dialog to create entries"""
+        # get a list of the files in the associated path
+        base_path = self.request.user.profile.VideoExperiment_path
+        file_list = listdir(base_path)
+        # include only csv files
+        file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
+        # get a list of the existing file names (bonsai)
+        existing_rows = [el[0] for el in VideoExperiment.objects.values_list('slug')]
+        # for all the files
+        for file in file_list:
+            # check if the entry already exists
+            if file.lower() in existing_rows:
+                # if so, skip making a new one
+                continue
+            # get the data for the entry
+            data_dict = parse_path(file, self, 'VideoExperiment_path')
+            # get rid of the animal2 entry
+            del data_dict['animal2']
+            # and of the motive one
+            del data_dict['track_path']
+            # check the paths in the filesystem, otherwise leave the entry empty
+            for key, value in data_dict.items():
+                if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                    data_dict[key] = ''
+            # create the model instance with the data
+            model_instance = VideoExperiment.objects.create(**data_dict)
+            # get the model for the experiment type to use
+            experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
+            # add the experiment type to the model instance (must use set() cause m2m)
+            model_instance.experiment_type.set(experiment_type)
+            # save the model instance
+            model_instance.save()
+
+        return HttpResponseRedirect('/loggers/video_experiment/')
 
 
 # viewset for 2P experiments
@@ -625,7 +733,9 @@ class TwoPhotonViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
@@ -645,7 +755,9 @@ class IntrinsicImagingViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
@@ -665,12 +777,15 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, )
-    ordering = ['date']
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -694,7 +809,7 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
                 # if so, skip making a new one
                 continue
             # get the data for the entry
-            data_dict = parse_path(file, self)
+            data_dict = parse_path(file, self, 'VRExperiment_path')
             # get rid of the animal2 entry
             del data_dict['animal2']
             # check the paths in the filesystem, otherwise leave the entry empty
@@ -713,14 +828,14 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect('/loggers/vr_experiment/')
 
     def perform_create(self, serializer):
-        # TODO: make the name parsing date dependent for retrocompatibility
-        # get the file name from the entry
-        proto_path = str(self.request.data['Select file'])[:-4]
-        # save the instance
-        serializer.save(**parse_path(proto_path, self))
+        # # get the file name from the entry
+        # proto_path = str(self.request.data['Select file'])[:-4]
+        # # save the instance
+        # serializer.save(**parse_path(proto_path, self))
+        serializer.save(owner=self.request.user)
 
 
-# viewset for vr experiments
+# viewset for projects
 class ProjectViewSet(viewsets.ModelViewSet):
     target_model = Project
 
@@ -775,7 +890,7 @@ class StrainViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
 
-# viewset for vr experiments
+# viewset for scoresheets
 class ScoreSheetViewSet(viewsets.ModelViewSet):
     # TODO: add the visualizations
     target_model = ScoreSheet
@@ -784,7 +899,9 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-sheet_date']
+    ordering_fields = ['sheet_date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     lookup_field = 'slug'
@@ -799,6 +916,9 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -847,9 +967,17 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
         mice = [el for sublist in mice for el in sublist]
         # get the corresponding scoresheets
         scoresheets = [list(el.score_sheet.all()) for el in mice]
-        print(scoresheets)
         # get the fields
-        return HttpResponseRedirect('/loggers/score_sheet/')
+        # get the fields
+        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
+                                                                                          'owner__username'])
+        file_stream = pe.save_as(query_sets=scoresheets[0], column_names=fields,
+                                 dest_file_type='xls')
+        # sheet = file_stream.sheet
+
+        print(file_stream.read())
+        return HttpResponse(export_data(request, "custom", scoresheets[0], fields), content_type='application/msexcel')
+        # return HttpResponseRedirect('/loggers/score_sheet/')
 
 
 # viewset for immuno stains
@@ -860,7 +988,9 @@ class ImmunoStainViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    ordering = ['-window_date']
+    ordering_fields = ['window_date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])

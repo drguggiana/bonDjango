@@ -169,8 +169,14 @@ class Surgery(models.Model):
     owner = models.ForeignKey('auth.User', related_name='surgery', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
 
+    slug = models.SlugField(unique=True, default=str(timezone.now()))
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify('_'.join((str(self.date)[0:19], str(self.mouse))))
+        super().save()
+
     def __str__(self):
-        return self.mouse.mouse_name+'_'+str(self.experiment_type.all()[0].surgery_type)
+        return self.slug
 
 
 # duration as duration field
@@ -221,7 +227,7 @@ class VideoExperiment(models.Model):
     date = models.DateTimeField('date of the experiment', default=timezone.now)
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
-    miniscope = models.CharField(max_length=200, default="N/A")
+    rig = models.CharField(max_length=200, default="N/A")
 
     sync_path = models.CharField(max_length=200, default="N/A")
     bonsai_path = models.CharField(max_length=200, default="N/A")
@@ -233,8 +239,14 @@ class VideoExperiment(models.Model):
     notes = models.TextField(max_length=5000, default="N/A")
     experiment_type = models.ManyToManyField('ExperimentType', related_name='videoexperiment_type')
 
+    slug = models.SlugField(unique=True, default=str(timezone.now))
+
+    def save(self, *args, **kwargs):
+        self.slug = slugify(basename(str(self.bonsai_path)[:-4]))
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return '_'.join((self.mouse.mouse_name, self.result, self.lighting))
+        return self.slug
 
 
 class TwoPhoton(models.Model):
@@ -309,9 +321,9 @@ class Profile(models.Model):
     main_path = models.CharField(max_length=1000, default='"N/A')
     ScoreSheet_path = models.CharField(max_length=1000, default='"N/A', null=True)
     Window_path = models.CharField(max_length=1000, default='"N/A', null=True)
-    Cricket_path = models.CharField(max_length=1000, default='"N/A', null=True)
     TwoPhoton_path = models.CharField(max_length=1000, default='"N/A', null=True)
     IntrinsicImaging_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    VideoExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     VRExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     ImmunoStain_path = models.CharField(max_length=1000, default='"N/A', null=True)
 
