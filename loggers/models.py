@@ -24,6 +24,7 @@ class License(models.Model):
     license_id = models.CharField(max_length=200, default="N/A")
     expiration_date = models.DateField('date of expiration', default=timezone.localdate)
     project = models.ManyToManyField('Project', related_name='license')
+    score_sheet_path = models.CharField(max_length=200, default='N/A')
     owner = models.ForeignKey('auth.User', related_name='license', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
     members = models.ManyToManyField('auth.User', related_name='license_members')
@@ -136,21 +137,21 @@ class Window(models.Model):
     window_date = models.DateTimeField('date window was taken', default=timezone.now)
     bfPath = models.CharField(max_length=1000, default="N/A")
     flPath = models.CharField(max_length=1000, default="N/A")
-    other_path = models.CharField(max_length=1000, default="N/A")
+    flgreenPath = models.CharField(max_length=1000, default="N/A")
+    otherPath = models.CharField(max_length=1000, default="N/A")
 
     region = models.CharField(max_length=100, default=V1, choices=REGION_LIST)
     owner = models.ForeignKey('auth.User', related_name='window', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
-    testPath = models.CharField(max_length=1000, default='N/A', null=True)
 
     slug = models.SlugField(unique=True, default=timezone.now())
 
     def save(self, *args, **kwargs):
-        self.slug = slugify(str(self.window_date)[0:19]+'_'+self.region+'_'+self.mouse.mouse_name)
+        self.slug = slugify(str(self.window_date)[0:19]+'_'+self.mouse.mouse_name+'_'+self.region)
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.mouse.mouse_name + '_' + self.region
+        return self.slug
 
 
 # duration as duration field
@@ -233,13 +234,14 @@ class VideoExperiment(models.Model):
     bonsai_path = models.CharField(max_length=200, default="N/A")
     avi_path = models.CharField(max_length=200, default="N/A")
     fluo_path = models.CharField(max_length=200, default="N/A")
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='video_analysis')
 
     owner = models.ForeignKey('auth.User', related_name='video_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
     notes = models.TextField(max_length=5000, default="N/A")
     experiment_type = models.ManyToManyField('ExperimentType', related_name='videoexperiment_type')
 
-    slug = models.SlugField(unique=True, default=str(timezone.now))
+    slug = models.SlugField(unique=True, default=str(timezone.now), max_length=200)
 
     def save(self, *args, **kwargs):
         self.slug = slugify(basename(str(self.bonsai_path)[:-4]))
@@ -257,6 +259,7 @@ class TwoPhoton(models.Model):
     auxPath = models.CharField(max_length=200, default="N/A")
     owner = models.ForeignKey('auth.User', related_name='two_photon', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='twophoton_analysis')
     experiment_type = models.ManyToManyField('ExperimentType', related_name='twophoton_type')
 
     def __str__(self):
@@ -271,6 +274,7 @@ class IntrinsicImaging(models.Model):
     stimulus = models.CharField(max_length=200, default="N/A")
     owner = models.ForeignKey('auth.User', related_name='intrinsic_imaging', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='intrinsic_analysis')
     experiment_type = models.ManyToManyField('ExperimentType', related_name='intrinsicimaging_type')
     mapPath = models.CharField(max_length=1000, default="N/A")
 
@@ -290,6 +294,7 @@ class VRExperiment(models.Model):
     bonsai_path = models.CharField(max_length=200, default="N/A")
     avi_path = models.CharField(max_length=200, default="N/A")
     fluo_path = models.CharField(max_length=200, default="N/A")
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='vr_analysis')
 
     owner = models.ForeignKey('auth.User', related_name='vr_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
@@ -326,6 +331,22 @@ class Profile(models.Model):
     VideoExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     VRExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     ImmunoStain_path = models.CharField(max_length=1000, default='"N/A', null=True)
+
+
+class AnalyzedData(models.Model):
+    analysis_type = models.CharField(max_length=200, default="N/A")
+    analysis_path = models.CharField(max_length=200, default="N/A")
+    pic_path = models.CharField(max_length=200, default="N/A")
+    result = models.CharField(max_length=200, default="N/A")
+    lighting = models.CharField(max_length=200, default="N/A")
+    rig = models.CharField(max_length=200, default="N/A")
+    date = models.DateTimeField(default=timezone.now)
+
+    slug = models.SlugField(unique=True, default=timezone.now, max_length=200)
+
+    def __str__(self):
+        return self.slug
+
 
 
 

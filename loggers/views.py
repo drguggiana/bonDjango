@@ -3,7 +3,7 @@
 import base64
 import datetime
 import inspect
-import pprint
+import pprint as pp
 import re
 from io import BytesIO
 from PIL import Image, ImageOps
@@ -15,7 +15,7 @@ from os import listdir
 # django imports for the scheduler and direct linking
 from django.core import management
 from django.http import HttpResponseRedirect, HttpResponse, HttpResponseBadRequest
-from django import forms
+from django.forms.models import model_to_dict
 
 # DRF specific requirements
 from rest_framework import filters
@@ -26,6 +26,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.renderers import JSONRenderer
+from rest_framework.pagination import PageNumberPagination
 
 # imports from the same project
 from . import labfolderRequest
@@ -34,12 +36,11 @@ from .paths import backup_path
 from .permissions import IsOwnerOrReadOnly
 from .serializers import *
 
-import django_excel as excel
-from django.shortcuts import render, redirect
 from django.apps import apps
 
 from .filters import DynamicSearchFilter
 import pyexcel as pe
+from .django_excel_interface import handson_table, embedhandson_table, import_data, export_data, export_network
 
 
 # snippet to convert camel case to snake case via regex
@@ -54,8 +55,10 @@ def labfolder_entry(instance):
     target_model = convert(type(instance.get_object()).__name__)
     # create a form from the target model
     form = form_dict[target_model](instance.get_object())
+    # get the current user
+    current_user = str(instance.request.user)
     # pass the form and model to create the labfolder entry
-    labfolderRequest.create_table(form, target_model)
+    labfolderRequest.create_table(form, target_model, current_user)
 
 
 # view to show images in the database, ideally after search query
@@ -111,86 +114,6 @@ def check_restriction():
             print('Mouse: ' + str(restriction.mouse) + ' should not be restricted anymore')
 
 
-# # function to render the scoresheets as part of the template
-def handson_table(request, query_sets, fields):
-    return excel.make_response_from_query_sets(query_sets, fields, 'handsontable.html')
-
-    # content = excel.pe.save_as(source=query_sets,
-    #                            dest_file_type='handsontable.html',
-    #                            dest_embed=True)
-    # content.seek(0)
-    # return render(
-    #     request,
-    #     'custom-handson-table.html',
-    #     {
-    #         'handsontable_content': content.read()
-    #     })
-    # return Response({'handsontable_content': render(content)}, template_name='custom-handson-table.html')
-
-
-def embedhandson_table(request):
-    content = excel.pe.save_as(
-        model=ScoreSheet,
-        dest_file_type='handsontable.html',
-        dest_embed=True)
-    content.seek(0)
-
-    return render(
-        request,
-        'custom-handson-table.html',
-        {
-            'handsontable_content': content.read()
-        })
-
-
-def import_data(request):
-
-    if request.method == "POST":
-        form = UploadFileForm(request.POST, request.FILES)
-        search_fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
-
-        def na_remover(row):
-            row = [0 if el == 'N/A' else el for el in row]
-            return row
-
-        def mouse_namer(row):
-            q = Mouse.objects.filter(mouse_name=row[-2])[0]
-            row[-2] = q
-            p = User.objects.filter(username=row[-1])[0]
-            row[-1] = p
-            return row
-
-        def fix_format(row):
-            # read the different sheets
-            slug_field = slugify(str(row[1])[0:19])
-            return row
-        if form.is_valid():
-            print(request.FILES['file'])
-
-            def save_book_as(**keywords):
-                return
-            request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[mouse_namer],
-                                                        mapdicts=[search_fields+['mouse', 'owner']])
-                                                        # mapdicts=[search_fields.sort()])
-            return HttpResponse(embedhandson_table(request))
-        else:
-            return HttpResponseBadRequest()
-    else:
-        form = UploadFileForm()
-    return render(request, 'upload_form.html', {'form': form, 'title': 'Import', 'header': 'Upload data'})
-
-
-def export_data(request, atype, queryset, fields):
-    if atype == "sheet":
-        return excel.make_response_from_a_table(ScoreSheet, 'xls', file_name="sheet")
-    elif atype == "book":
-        return excel.make_response_from_tables([ScoreSheet], 'xls', file_name="book")
-    elif atype == "custom":
-        return excel.make_response_from_query_sets(queryset, fields, 'xls', file_name='custom')
-    else:
-        return HttpResponseBadRequest("bad request, choose one")
-
-
 def save_session_data(self, queryset):
     # # get the queryset (so effectively run the method normally)
     # queryset = eval('super().filter_queryset(queryset)')
@@ -222,7 +145,7 @@ def load_session_data(self, request):
     return data
 
 
-def check_files(current_user=None):
+def check_files(instance=None):
     """Function that runs periodically, checking that the paths in the database actually lead to files"""
     # TODO: add callable version for particular user
     # TODO: save the user of the missing files
@@ -237,7 +160,7 @@ def check_files(current_user=None):
     # for all the models
     for model in app_models:
         # if it's the profile, skip it
-        if model.__name__ == 'Profile':
+        if model.__name__ in ['Profile', 'Project', 'License']:
             continue
         # get a list of the fields in this model
         fields = model._meta.fields
@@ -246,30 +169,36 @@ def check_files(current_user=None):
         # if the model contains such a field and there's a non-null entry
         if (len(fields) > 0) & (len(model.objects.values_list(*fields)) > 0):
             # append the paths to a global list
-            database_paths.append(list(model.objects.values_list(*fields)[0]))
-    # flatten the list
-    # print([el for sublist in database_paths for el in sublist])
-    database_paths = [el for sublist in database_paths for el in sublist]
-    print(database_paths)
+            database_paths.append(list(model.objects.values_list(*fields)))
+    # flatten the list and exclude N/A
+    database_paths = [el for sublist in database_paths for subtuple in sublist for el in subtuple
+                      if el not in ['N/A', '']]
+    # allocate memory for the missing files
+    missing_files = []
+    # # check for existence of the files
+    # for files in database_paths:
+    #     if not exists(files):
+    #         missing_files.append(files)
+    # print the list of missing files
+    # print(missing_files)
     # get the paths in the file system
 
-    # # get the paths from the profile
-    # fields = [el for el in models.Profile._meta.fields if 'path' in el.name]
-    # fields = [el for el in fields if 'main' not in el.name]
-    # # fields.remove('main_path')
-    # # allocate a list for the physical files
-    # physical_list = []
-    # # run through the profile instances checking the paths
-    # for profiles in models.Profile.objects.all():
-    #     # for the fields
-    #     for field in fields:
-    #         physical_list.append(field.value_from_object(profiles))
-    #         print(listdir(field.value_from_object(profiles)))
+    # get the paths from the profile
+    fields = [el for el in Profile._meta.fields if 'path' in el.name]
+    fields = [el for el in fields if 'main' not in el.name]
+    # fields.remove('main_path')
+    # allocate a list for the physical files
+    physical_list = []
+    # run through the profile instances checking the paths
+    for profiles in Profile.objects.all():
+        # for the fields
+        for field in fields:
+            physical_list.append(field.value_from_object(profiles))
     # print(physical_list)
     return None
 
 
-def parse_path(proto_path, instance, model_path):
+def parse_path_experiment(proto_path, instance, model_path):
     """Parse the model arguments from the file name"""
 
     # split the file name into parts
@@ -291,7 +220,7 @@ def parse_path(proto_path, instance, model_path):
 
         if rig == 'miniscope':
             # define the miniscope path
-            fluo_path = join(base_path, proto_path + '.csv')
+            fluo_path = join(base_path, proto_path + '_calcium_data.h5')
         elif rig == 'social':
             fluo_path = ''
             is_animal2 = True
@@ -343,7 +272,7 @@ def parse_path(proto_path, instance, model_path):
     # define the path for the sync file
     sync_path = join(base_path, proto_path + '.csv')
     if rig == 'miniscope':
-        sync_path = sync_path.replace('miniscope', 'syncMini')
+        sync_path = sync_path.replace('_miniscope_', '_syncMini_')
     else:
         sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
     
@@ -362,13 +291,71 @@ def parse_path(proto_path, instance, model_path):
             'animal2': animal2}
 
 
+def parse_path_image(proto_path, instance, model_path):
+    """Parse the model arguments from the file name"""
+
+    # split the file name into parts
+    name_parts = proto_path.split('_')
+    # get the base path for the current model
+    base_path = eval('instance.request.user.profile.' + model_path)
+    # get the different parameters from the model
+    # get the date
+    date = datetime.datetime.strptime(name_parts[0], '%Y%m%d')
+
+    # get the animal
+    animal = Mouse.objects.get(mouse_name='_'.join(name_parts[1:4]))
+
+    # get the region
+    region = name_parts[4]
+
+    print(date)
+
+    # define the path for the different files
+    bfpath = join(base_path, '_'.join((name_parts[0], animal.mouse_name, 'BF', region)) + '.tif')
+    flpath = bfpath.replace('BF', 'FL')
+    flgreenpath = bfpath.replace('BF', 'FLgreen')
+    otherpath = bfpath.replace('BF', 'OTHER')
+
+    return {'owner': instance.request.user,
+            'mouse': animal,
+            'window_date': date,
+            'bfPath': bfpath,
+            'flPath': flpath,
+            'flgreenPath': flgreenpath,
+            'otherPath': otherpath,
+            'region': region}
+
+
 def general_serializer(instance):
+    """Provide a serializer depending on the request"""
     # get the serializer for this model
     serializer_class = eval(instance.target_model.__name__ + 'Serializer')
+    # if instance.action == 'retrieve':
+    if instance.action in ['retrieve', 'create', 'update']:
 
-    if instance.action == 'retrieve':
         # if it's the detail view, just return the standard serializer
         return serializer_class
+    elif instance.action == 'from_python':
+        # copy the declared fields from the detail serializer
+        PythonSerializer._declared_fields = serializer_class._declared_fields.copy()
+        # also the fields
+        PythonSerializer.Meta.fields = serializer_class.Meta.fields.copy()
+        # get fields
+        model_fields = instance.target_model._meta.get_fields()
+        # copy the extra_kwargs
+        PythonSerializer.Meta.extra_kwargs = serializer_class.Meta.extra_kwargs.copy()
+        # del PythonSerializer.Meta.extra_kwargs['preproc_files']
+        # and the model
+        PythonSerializer.Meta.model = instance.target_model
+        # turn the relations into text fields, except the m2m field since the automatic serialization works better
+        for fields in model_fields:
+            if fields.is_relation:
+                if not isinstance(fields, models.ManyToManyField):
+                    PythonSerializer._declared_fields[fields.name] = serializers.StringRelatedField()
+                elif fields.name == 'preproc_files':
+                    PythonSerializer._declared_fields[fields.name] = serializers.HyperlinkedRelatedField(
+                        view_name='analyzeddata-detail', many=True, read_only=True)
+        return PythonSerializer
     else:  # if not, modify it to remove unnecessary fields from the list view
 
         # copy the attributes to the generalized serializer
@@ -414,8 +401,28 @@ def general_serializer(instance):
         return GeneralSerializer
 
 
-class UploadFileForm(forms.Form):
-    file = forms.FileField()
+def from_python_function(instance):
+    """Manage requests from python analyzing scripts"""
+    # set the pagination class
+    pagination_class = FromPythonPagination
+    # filter queryset based on the search terms
+    instance.queryset = instance.filter_queryset(instance.queryset)
+    # get the serializer for this view
+    current_serializer = general_serializer(instance)
+    # serialize the data (many flag for serializing a queryset)
+    serialized_queryset = current_serializer(instance.queryset, many=True, context={'request': instance.request})
+    # get the data to serialize
+    data = serialized_queryset.data
+    # generate the response
+    return HttpResponse(JSONRenderer().render({'count': len(instance.queryset), 'next': None, 'previous': None,
+                                               'results': data}))
+
+
+class FromPythonPagination(PageNumberPagination):
+    """Class to control pagination when querying from analysis scripts"""
+    page_size = 10000
+    page_size_query_param = 'page_size'
+    max_page_size = 100000
 
 
 # viewset for the users model
@@ -426,6 +433,11 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
 
     lookup_field = 'username'
+
+    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    def check_files_action(self, request, *args, **kwargs):
+        check_files(kwargs['username'])
+        return HttpResponseRedirect('/loggers/user/')
 
 
 # viewset for the profile model
@@ -524,13 +536,8 @@ class WindowViewSet(viewsets.ModelViewSet):
 
     lookup_field = 'slug'
 
-    # def get_queryset(self):
-    #     if self.request._request.method != 'GET':
-    #         pprint.pprint(self.request.__dict__)
-    #     return self.queryset
-
-    # override the filter_queryset method from the generics to capture the search terms in session data
     def filter_queryset(self, queryset):
+        """override the filter_queryset method from the generics to capture the search terms in session data"""
         # get the queryset (so effectively run the method normally)
         queryset = super().filter_queryset(queryset)
         # now fix it and save it in session data
@@ -538,8 +545,9 @@ class WindowViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user, testPath=eval("self.request.user.profile." +
-                        self.target_model.__name__+"_path") + "\\" + str(self.request.data['Select file']))
+        # serializer.save(owner=self.request.user, testPath=eval("self.request.user.profile." +
+        #                 self.target_model.__name__+"_path") + "\\" + str(self.request.data['Select file']))
+        serializer.save(owner=self.request.user)
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -566,6 +574,41 @@ class WindowViewSet(viewsets.ModelViewSet):
         # return a response to the pic displaying template
         return Response({'pic_list': pic_list}, template_name='loggers/singlepic_display.html')
 
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def load_batch(self, request, *args, **kwargs):
+        """Select several files from a file dialog to create entries"""
+        try:
+            # get a list of the files in the associated path
+            base_path = self.request.user.profile.Window_path
+            file_list = listdir(base_path)
+            # include only csv files
+            file_list = [el[:-4].replace('BF_', '') for el in file_list if ('.tif' in el) and ('.xml' not in el)
+                         and ('_BF_' in el)]
+            # get a list of the existing file names
+            existing_rows = [el[0] for el in Window.objects.values_list('slug')]
+            # for all the files
+            for file in file_list:
+                # check if the entry already exists
+                if file.lower() in existing_rows:
+                    # if so, skip making a new one
+                    continue
+                # get the data for the entry
+                data_dict = parse_path_image(file, self, 'Window_path')
+                print(data_dict)
+                # check the paths in the filesystem, otherwise leave the entry empty
+                for key, value in data_dict.items():
+                    if (isinstance(value, str)) and ('Path' in key) and (not exists(value)):
+                        data_dict[key] = ''
+                # create the model instance with the data
+                model_instance = Window.objects.create(**data_dict)
+
+                # save the model instance
+                model_instance.save()
+
+            return HttpResponseRedirect('/loggers/window/')
+        except:
+            return HttpResponseBadRequest('loading file failed, check file names')
+
 
 # viewset for surgeries
 class SurgeryViewSet(viewsets.ModelViewSet):
@@ -573,8 +616,8 @@ class SurgeryViewSet(viewsets.ModelViewSet):
 
     queryset = target_model.objects.all()
     serializer_class = eval(target_model.__name__+'Serializer')
-    permission_classes = (permissions.IsAuthenticatedOrReadOnly,
-                          IsOwnerOrReadOnly,)
+    # permission_classes = (permissions.IsAuthenticatedOrReadOnly,
+    #                       IsOwnerOrReadOnly,)
     filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
@@ -585,7 +628,7 @@ class SurgeryViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action == 'create' and 'experiment_type' in self.request.data:
             # get the type of experiment from the url
-            url_experiment_type = self.request.data['experiment_type'].split('/')[5]
+            url_experiment_type = self.request.data['experiment_type']
             # get the users in the experiment type
             user_queryset = ExperimentType.objects.get(experiment_name=url_experiment_type).users.all()
             if self.request.user not in user_queryset:
@@ -679,6 +722,10 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return general_serializer(self)
 
+    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    def from_python(self, request, *args, **kwargs):
+        return from_python_function(self)
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
@@ -690,39 +737,42 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def load_batch(self, request, *args, **kwargs):
         """Select several files from a file dialog to create entries"""
-        # get a list of the files in the associated path
-        base_path = self.request.user.profile.VideoExperiment_path
-        file_list = listdir(base_path)
-        # include only csv files
-        file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
-        # get a list of the existing file names (bonsai)
-        existing_rows = [el[0] for el in VideoExperiment.objects.values_list('slug')]
-        # for all the files
-        for file in file_list:
-            # check if the entry already exists
-            if file.lower() in existing_rows:
-                # if so, skip making a new one
-                continue
-            # get the data for the entry
-            data_dict = parse_path(file, self, 'VideoExperiment_path')
-            # get rid of the animal2 entry
-            del data_dict['animal2']
-            # and of the motive one
-            del data_dict['track_path']
-            # check the paths in the filesystem, otherwise leave the entry empty
-            for key, value in data_dict.items():
-                if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
-                    data_dict[key] = ''
-            # create the model instance with the data
-            model_instance = VideoExperiment.objects.create(**data_dict)
-            # get the model for the experiment type to use
-            experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
-            # add the experiment type to the model instance (must use set() cause m2m)
-            model_instance.experiment_type.set(experiment_type)
-            # save the model instance
-            model_instance.save()
+        try:
+            # get a list of the files in the associated path
+            base_path = self.request.user.profile.VideoExperiment_path
+            file_list = listdir(base_path)
+            # include only csv files
+            file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
+            # get a list of the existing file names (bonsai)
+            existing_rows = [el[0] for el in VideoExperiment.objects.values_list('slug')]
+            # for all the files
+            for file in file_list:
+                # check if the entry already exists
+                if file.lower() in existing_rows:
+                    # if so, skip making a new one
+                    continue
+                # get the data for the entry
+                data_dict = parse_path_experiment(file, self, 'VideoExperiment_path')
+                # get rid of the animal2 entry
+                del data_dict['animal2']
+                # and of the motive one
+                del data_dict['track_path']
+                # check the paths in the filesystem, otherwise leave the entry empty
+                for key, value in data_dict.items():
+                    if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                        data_dict[key] = ''
+                # create the model instance with the data
+                model_instance = VideoExperiment.objects.create(**data_dict)
+                # get the model for the experiment type to use
+                experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
+                # add the experiment type to the model instance (must use set() cause m2m)
+                model_instance.experiment_type.set(experiment_type)
+                # save the model instance
+                model_instance.save()
 
-        return HttpResponseRedirect('/loggers/video_experiment/')
+            return HttpResponseRedirect('/loggers/video_experiment/')
+        except:
+            return HttpResponseBadRequest('loading file failed, check file names')
 
 
 # viewset for 2P experiments
@@ -787,6 +837,10 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return general_serializer(self)
 
+    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    def from_python(self, request, *args, **kwargs):
+        return from_python_function(self)
+
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
         labfolder_entry(self)
@@ -794,38 +848,41 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def load_batch(self, request, *args, **kwargs):
-        """Select several files from a file dialog to create entries"""
-        # get a list of the files in the associated path
-        base_path = self.request.user.profile.VRExperiment_path
-        file_list = listdir(base_path)
-        # include only csv files
-        file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
-        # get a list of the existing file names (bonsai)
-        existing_rows = [el[0] for el in VRExperiment.objects.values_list('slug')]
-        # for all the files
-        for file in file_list:
-            # check if the entry already exists
-            if file.lower() in existing_rows:
-                # if so, skip making a new one
-                continue
-            # get the data for the entry
-            data_dict = parse_path(file, self, 'VRExperiment_path')
-            # get rid of the animal2 entry
-            del data_dict['animal2']
-            # check the paths in the filesystem, otherwise leave the entry empty
-            for key, value in data_dict.items():
-                if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
-                    data_dict[key] = ''
-            # create the model instance with the data
-            model_instance = VRExperiment.objects.create(**data_dict)
-            # get the model for the experiment type to use
-            experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
-            # add the experiment type to the model instance (must use set() cause m2m)
-            model_instance.experiment_type.set(experiment_type)
-            # save the model instance
-            model_instance.save()
+        """Select files automatically from a target path to create entries"""
+        try:
+            # get a list of the files in the associated path
+            base_path = self.request.user.profile.VRExperiment_path
+            file_list = listdir(base_path)
+            # include only csv files
+            file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
+            # get a list of the existing file names (bonsai)
+            existing_rows = [el[0] for el in VRExperiment.objects.values_list('slug')]
+            # for all the files
+            for file in file_list:
+                # check if the entry already exists
+                if file.lower() in existing_rows:
+                    # if so, skip making a new one
+                    continue
+                # get the data for the entry
+                data_dict = parse_path_experiment(file, self, 'VRExperiment_path')
+                # get rid of the animal2 entry
+                del data_dict['animal2']
+                # check the paths in the filesystem, otherwise leave the entry empty
+                for key, value in data_dict.items():
+                    if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                        data_dict[key] = ''
+                # create the model instance with the data
+                model_instance = VRExperiment.objects.create(**data_dict)
+                # get the model for the experiment type to use
+                experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
+                # add the experiment type to the model instance (must use set() cause m2m)
+                model_instance.experiment_type.set(experiment_type)
+                # save the model instance
+                model_instance.save()
 
-        return HttpResponseRedirect('/loggers/vr_experiment/')
+            return HttpResponseRedirect('/loggers/vr_experiment/')
+        except:
+            return HttpResponseBadRequest('loading file failed, check file names')
 
     def perform_create(self, serializer):
         # # get the file name from the entry
@@ -920,10 +977,10 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         return general_serializer(self)
 
-    @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
-    def labfolder_action(self, request, *args, **kwargs):
-        labfolder_entry(self)
-        return HttpResponseRedirect('/loggers/')
+    # @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
+    # def labfolder_action(self, request, *args, **kwargs):
+    #     labfolder_entry(self)
+    #     return HttpResponseRedirect('/loggers/')
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def see_scoresheet(self, request, *args, **kwargs):
@@ -954,30 +1011,7 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def export_to_network(self, request, *args, **kwargs):
-        # get the license from this animal
-        license_object = self.get_object().mouse.mouse_set.license
-        # get the user from this animal
-        user_object = license_object.owner
-        # get all the mice from this license and user
-        # first get the mouse_sets
-        mouse_sets = MouseSet.objects.filter(owner=user_object, license=license_object)
-        # now get the mice within this mouse set
-        mice = [list(el.mouse.all()) for el in mouse_sets]
-        # flatten the list
-        mice = [el for sublist in mice for el in sublist]
-        # get the corresponding scoresheets
-        scoresheets = [list(el.score_sheet.all()) for el in mice]
-        # get the fields
-        # get the fields
-        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
-                                                                                          'owner__username'])
-        file_stream = pe.save_as(query_sets=scoresheets[0], column_names=fields,
-                                 dest_file_type='xls')
-        # sheet = file_stream.sheet
-
-        print(file_stream.read())
-        return HttpResponse(export_data(request, "custom", scoresheets[0], fields), content_type='application/msexcel')
-        # return HttpResponseRedirect('/loggers/score_sheet/')
+        return export_network(self, request)
 
 
 # viewset for immuno stains
@@ -989,8 +1023,8 @@ class ImmunoStainViewSet(viewsets.ModelViewSet):
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
     filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
-    ordering = ['-window_date']
-    ordering_fields = ['window_date']
+    ordering = ['-date']
+    ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
@@ -1032,7 +1066,25 @@ class ExperimentTypeViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
+    def get_serializer_class(self):
+        return general_serializer(self)
 
+
+class AnalyzedDataViewSet(viewsets.ModelViewSet):
+
+    target_model = AnalyzedData
+    queryset = target_model.objects.all()
+    serializer_class = eval(target_model.__name__ + 'Serializer')
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter,)
+    ordering = ['-date']
+    ordering_fields = ['date']
+    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        return general_serializer(self)
 # if relative URLs are desired, override the get_serializer_context method with the snippet below
 # def get_serializer_context(self):
     #     context_out = super().get_serializer_context()

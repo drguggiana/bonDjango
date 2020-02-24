@@ -88,7 +88,6 @@ class GroupSerializer(serializers.HyperlinkedModelSerializer):
 
 class WindowSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    testPath = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
 
     class Meta:
         model = Window
@@ -147,10 +146,12 @@ class VideoExperimentSerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = VideoExperiment
         fields = ([f.name for f in model._meta.get_fields()])
+        # fields.remove('slug')
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
         extra_kwargs['url'] = {'lookup_field': 'slug'}
+        extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
 
 
 class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
@@ -177,7 +178,6 @@ class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
 
 class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    # bonsai_path = serializers.CharField(style={'base_template': 'fileMod.html'}, allow_null=True, default='NA')
 
     class Meta:
         model = VRExperiment
@@ -187,6 +187,7 @@ class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
 
         extra_kwargs = common_extra_kwargs.copy()
         extra_kwargs['url'] = {'lookup_field': 'slug'}
+        extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
 
 
 class ProjectSerializer(serializers.HyperlinkedModelSerializer):
@@ -260,15 +261,6 @@ class MouseSetSerializer(serializers.HyperlinkedModelSerializer):
 
 class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    # users = serializers.HyperlinkedRelatedField(many=True, view_name='user-detail', read_only=True,
-    #                                             source='users_set.username')
-    # surgery = serializers.HyperlinkedRelatedField(many=True, view_name='experimenttype-detail', read_only=True)
-    # users = serializers.SerializerMethodField()
-    #
-    # def get_users(self, obj):
-    #     print(self.__dict__)
-    #     if obj:
-    #         return str(name.username for name in self.users.get_queryset())
 
     class Meta:
         model = ExperimentType
@@ -276,10 +268,31 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
         extra_kwargs = {'users': {'lookup_field': 'username'},
                         'vrexperiment_type': {'lookup_field': 'slug'},
-                        'videoexperiment_type': {'lookup_field': 'slug'}}
+                        'videoexperiment_type': {'lookup_field': 'slug'},
+                        'surgery_type': {'lookup_field': 'slug'}}
+
+
+class AnalyzedDataSerializer(serializers.HyperlinkedModelSerializer):
+
+    class Meta:
+        model = AnalyzedData
+        fields = ([f.name for f in model._meta.get_fields()])
+        # fields.remove('slug')
+        fields = sort_fields(fields)
+        extra_kwargs = {'url': {'lookup_field': 'slug'},
+                        'vr_analysis': {'lookup_field': 'slug'},
+                        'video_analysis': {'lookup_field': 'slug'}}
 
 
 class GeneralSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = None
+        fields = None
+        extra_kwargs = None
+
+
+class PythonSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = None
