@@ -330,9 +330,9 @@ def general_serializer(instance):
     """Provide a serializer depending on the request"""
     # get the serializer for this model
     serializer_class = eval(instance.target_model.__name__ + 'Serializer')
-    # if instance.action == 'retrieve':
+    # use this for create, update and retrieve, since we only need special serialization to display less in list and
+    # to communicate with python
     if instance.action in ['retrieve', 'create', 'update']:
-
         # if it's the detail view, just return the standard serializer
         return serializer_class
     elif instance.action == 'from_python':
@@ -344,17 +344,18 @@ def general_serializer(instance):
         model_fields = instance.target_model._meta.get_fields()
         # copy the extra_kwargs
         PythonSerializer.Meta.extra_kwargs = serializer_class.Meta.extra_kwargs.copy()
-        # del PythonSerializer.Meta.extra_kwargs['preproc_files']
         # and the model
         PythonSerializer.Meta.model = instance.target_model
         # turn the relations into text fields, except the m2m field since the automatic serialization works better
         for fields in model_fields:
             if fields.is_relation:
-                if not isinstance(fields, models.ManyToManyField):
+
+                if (not isinstance(fields, models.ManyToManyField)) and \
+                        (not isinstance(fields, models.ManyToManyRel)):
                     PythonSerializer._declared_fields[fields.name] = serializers.StringRelatedField()
-                elif fields.name == 'preproc_files':
-                    PythonSerializer._declared_fields[fields.name] = serializers.HyperlinkedRelatedField(
-                        view_name='analyzeddata-detail', many=True, read_only=True)
+                else:
+                    PythonSerializer._declared_fields[fields.name] = serializers.StringRelatedField(many=True)
+
         return PythonSerializer
     else:  # if not, modify it to remove unnecessary fields from the list view
 
@@ -1085,6 +1086,10 @@ class AnalyzedDataViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         return general_serializer(self)
+
+    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    def from_python(self, request, *args, **kwargs):
+        return from_python_function(self)
 # if relative URLs are desired, override the get_serializer_context method with the snippet below
 # def get_serializer_context(self):
     #     context_out = super().get_serializer_context()

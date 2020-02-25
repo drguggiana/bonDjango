@@ -142,6 +142,10 @@ class RestrictionSerializer(serializers.HyperlinkedModelSerializer):
 
 class VideoExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
+    # preproc_files = serializers.HyperlinkedRelatedField(
+    #                     view_name='analyzeddata-detail', many=True, read_only=True, lookup_field='slug')
+    # mouse = serializers.HyperlinkedRelatedField(
+    #                     view_name='mouse-detail', read_only=True, lookup_field='mouse_name')
 
     class Meta:
         model = VideoExperiment
@@ -156,6 +160,8 @@ class VideoExperimentSerializer(serializers.HyperlinkedModelSerializer):
 
 class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
+    preproc_files = serializers.HyperlinkedRelatedField(
+                        view_name='analyzeddata-detail', many=True, read_only=True, lookup_field='slug')
 
     class Meta:
         model = TwoPhoton
@@ -163,10 +169,13 @@ class TwoPhotonSerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
+        # extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
 
 
 class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
+    preproc_files = serializers.HyperlinkedRelatedField(
+                        view_name='analyzeddata-detail', many=True, read_only=True, lookup_field='slug')
 
     class Meta:
         model = IntrinsicImaging
@@ -174,20 +183,23 @@ class IntrinsicImagingSerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
+        # extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
 
 
 class VRExperimentSerializer(serializers.HyperlinkedModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
+    preproc_files = serializers.HyperlinkedRelatedField(
+                        view_name='analyzeddata-detail', many=True, read_only=True, lookup_field='slug')
 
     class Meta:
         model = VRExperiment
         fields = ([f.name for f in model._meta.get_fields()])
-        fields.remove('slug')
+        # fields.remove('slug')
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
         extra_kwargs['url'] = {'lookup_field': 'slug'}
-        extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
+        # extra_kwargs['preproc_files'] = {'lookup_field': 'slug'}
 
 
 class ProjectSerializer(serializers.HyperlinkedModelSerializer):
@@ -273,6 +285,14 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class AnalyzedDataSerializer(serializers.HyperlinkedModelSerializer):
+    # video_analysis = serializers.HyperlinkedRelatedField(
+    #                     # view_name='videoexperiment-detail', many=True, read_only=True, lookup_field='slug')
+    # vr_analysis = serializers.HyperlinkedRelatedField(
+    #                     view_name='vrexperiment-detail', many=True, read_only=True, lookup_field='slug')
+    # twophoton_analysis = serializers.HyperlinkedRelatedField(
+    #                     view_name='twophoton-detail', many=True, read_only=True)
+    # intrinsic_analysis = serializers.HyperlinkedRelatedField(
+    #                     view_name='intrinsicimaging-detail', many=True, read_only=True)
 
     class Meta:
         model = AnalyzedData
