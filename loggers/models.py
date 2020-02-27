@@ -336,21 +336,17 @@ class Profile(models.Model):
 class AnalyzedData(models.Model):
     analysis_type = models.CharField(max_length=200, default="N/A")
     analysis_path = models.CharField(max_length=200, default="N/A")
+    input_path = models.TextField(max_length=50000, default="N/A")
     pic_path = models.CharField(max_length=200, default="N/A")
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
     rig = models.CharField(max_length=200, default="N/A")
     date = models.DateTimeField(default=timezone.now)
+    notes = models.TextField(max_length=5000, default="N/A")
 
     slug = models.SlugField(unique=True, default=timezone.now, max_length=200)
 
     def __str__(self):
         return self.slug
-
-
-
-
-
-
 
 

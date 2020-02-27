@@ -8,10 +8,11 @@ common_extra_kwargs = {'mouse': {'lookup_field': 'mouse_name'}}
 
 # define a function to put the url first and then sort all the other fields
 def sort_fields(fields):
-    # if 'mouse' in fields:
-    #     sorted_fields = (['url', 'mouse'] + sorted(fields).remove('mouse'))
-    # else:
-    sorted_fields = (['url'] + sorted(fields))
+    if 'mouse' in fields:
+        fields.remove('mouse')
+        sorted_fields = (['url', 'mouse'] + sorted(fields))
+    else:
+        sorted_fields = (['url'] + sorted(fields))
     return sorted_fields
 
 
@@ -285,14 +286,6 @@ class ExperimentTypeSerializer(serializers.HyperlinkedModelSerializer):
 
 
 class AnalyzedDataSerializer(serializers.HyperlinkedModelSerializer):
-    # video_analysis = serializers.HyperlinkedRelatedField(
-    #                     # view_name='videoexperiment-detail', many=True, read_only=True, lookup_field='slug')
-    # vr_analysis = serializers.HyperlinkedRelatedField(
-    #                     view_name='vrexperiment-detail', many=True, read_only=True, lookup_field='slug')
-    # twophoton_analysis = serializers.HyperlinkedRelatedField(
-    #                     view_name='twophoton-detail', many=True, read_only=True)
-    # intrinsic_analysis = serializers.HyperlinkedRelatedField(
-    #                     view_name='intrinsicimaging-detail', many=True, read_only=True)
 
     class Meta:
         model = AnalyzedData

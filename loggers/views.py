@@ -40,7 +40,8 @@ from django.apps import apps
 
 from .filters import DynamicSearchFilter
 import pyexcel as pe
-from .django_excel_interface import handson_table, embedhandson_table, import_data, export_data, export_network
+from .django_excel_interface import handson_table, embedhandson_table, import_data, export_data, \
+    export_network, weights_function, percentage_function
 
 
 # snippet to convert camel case to snake case via regex
@@ -261,7 +262,7 @@ def parse_path_experiment(proto_path, instance, model_path):
     if len(name_parts) > animal_last:
         notes = '_'.join((name_parts[animal_last:]))
     else:
-        notes = ''
+        notes = 'BLANK'
 
     # define the path for the bonsai file
     bonsai_path = join(base_path, proto_path + '.csv')
@@ -307,8 +308,6 @@ def parse_path_image(proto_path, instance, model_path):
 
     # get the region
     region = name_parts[4]
-
-    print(date)
 
     # define the path for the different files
     bfpath = join(base_path, '_'.join((name_parts[0], animal.mouse_name, 'BF', region)) + '.tif')
@@ -369,7 +368,7 @@ def general_serializer(instance):
         # for all the fields in the serializer
         for fields in GeneralSerializer.Meta.fields:
 
-            # remove the if field (since it's not in declared_fields)
+            # remove the id field (since it's not in declared_fields)
             if fields in ['id', 'slug']:
                 # eliminate the field from the serializer
                 remove_fields.append(fields)
@@ -1014,6 +1013,28 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
     def export_to_network(self, request, *args, **kwargs):
         return export_network(self, request)
 
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def see_weight(self, request, *args, **kwargs):
+        # get the mouse from the request
+        mouse = self.get_object().mouse
+        # get the other scoresheet objects from the same mouse
+        data = ScoreSheet.objects.filter(mouse=mouse)
+        # get the fields
+        fields = (['sheet_date', 'weight', 'food_consumed'])
+        return weights_function(request, data, fields)
+
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def see_percentage_weight(self, request, *args, **kwargs):
+        # get the mouse from the request
+        mouse = self.get_object().mouse
+        # get the other scoresheet objects from the same mouse
+        data = ScoreSheet.objects.filter(mouse=mouse)
+        # get the restrictions
+        restrictions = Restriction.objects.filter(mouse=mouse, ongoing=True)
+        # get the fields
+        fields = (['sheet_date', 'weight', 'food_consumed', 'notes'])
+        return percentage_function(request, data, fields, restrictions)
+
 
 # viewset for immuno stains
 class ImmunoStainViewSet(viewsets.ModelViewSet):
@@ -1090,6 +1111,7 @@ class AnalyzedDataViewSet(viewsets.ModelViewSet):
     @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
     def from_python(self, request, *args, **kwargs):
         return from_python_function(self)
+
 # if relative URLs are desired, override the get_serializer_context method with the snippet below
 # def get_serializer_context(self):
     #     context_out = super().get_serializer_context()

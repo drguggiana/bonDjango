@@ -154,3 +154,70 @@ def export_network(instance, request):
     # return HttpResponse(export_data(request, "custom", scoresheets[0], fields), content_type='application/msexcel')
     # return HttpResponseRedirect('/loggers/score_sheet/')
 
+
+def weights_function(request, data, fields):
+    """Plot the weight and the consumed food for a given animal over time"""
+    # get the sheet
+    sheet = excel.pe.get_sheet(query_sets=data, column_names=fields)
+    # name the columns of the sheet by the first row (since pyexcel is agnostic to this unless pointed out)
+    sheet.name_columns_by_row(0)
+    # format the dates for labeling
+    dates = [el[:10] for el in sheet.column['sheet_date']]
+    # define the data dictionary
+    data_dict = {
+        'Date': sheet.column['sheet_date'],
+        'Food': sheet.column['food_consumed'],
+        'Weight': sheet.column['weight'],
+    }
+
+    # print(sheet.name_rows_by_column())
+    svg = excel.pe.save_as(
+        adict=data_dict,
+        dest_label_x_in_column=0,
+        dest_x_labels=dates,
+        dest_file_type='svg',
+        dest_chart_type='line',
+        dest_title='Weight progression',
+        dest_width=1600,
+        dest_height=800
+    )
+
+    return render(request, 'weight_chart.html', dict(svg=svg.read()))
+
+
+def percentage_function(request, data, fields, restrictions):
+    """Plot the percentage weight for an animal during restriction"""
+    # get the start date
+    start_date = str(restrictions[0].start_date)[:10]
+    print(start_date)
+    # get the sheet
+    sheet = excel.pe.get_sheet(query_sets=data, column_names=fields)
+    # name the columns of the sheet by the first row (since pyexcel is agnostic to this unless pointed out)
+    sheet.name_columns_by_row(0)
+    # format the dates for labeling
+    dates = [el[:10] for el in sheet.column['sheet_date']]
+    # get the index of the start date
+    idx_start = dates.index(start_date)
+    # calculate percentage weight
+    percentage_weight = [el*100/sheet.column['weight'][idx_start] for el in sheet.column['weight'][idx_start:]]
+
+    print(idx_start)
+    # define the data dictionary
+    data_dict = {
+        'Date': sheet.column['sheet_date'],
+        'Percentage': percentage_weight,
+    }
+
+    # print(sheet.name_rows_by_column())
+    svg = excel.pe.save_as(
+        adict=data_dict,
+        dest_label_x_in_column=0,
+        dest_x_labels=dates,
+        dest_file_type='svg',
+        dest_chart_type='line',
+        dest_title='Weight progression',
+        dest_width=1600,
+        dest_height=800
+    )
+
+    return render(request, 'weight_chart.html', dict(svg=svg.read()))
