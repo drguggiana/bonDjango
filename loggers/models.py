@@ -22,6 +22,7 @@ class Project(models.Model):
 class License(models.Model):
     license_name = models.CharField(max_length=200, default="N/A", primary_key=True)
     license_id = models.CharField(max_length=200, default="N/A")
+    license_path = models.CharField(max_length=500, default="N/A")
     expiration_date = models.DateField('date of expiration', default=timezone.localdate)
     project = models.ManyToManyField('Project', related_name='license')
     score_sheet_path = models.CharField(max_length=200, default='N/A')
@@ -229,12 +230,15 @@ class VideoExperiment(models.Model):
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
     rig = models.CharField(max_length=200, default="N/A")
+    imaging = models.CharField(max_length=200, default="N/A")
 
     sync_path = models.CharField(max_length=200, default="N/A")
     bonsai_path = models.CharField(max_length=200, default="N/A")
     avi_path = models.CharField(max_length=200, default="N/A")
     fluo_path = models.CharField(max_length=200, default="N/A")
-    preproc_files = models.ManyToManyField('AnalyzedData', related_name='video_analysis')
+    tif_path = models.CharField(max_length=200, default="N/A")
+    dlc_path = models.CharField(max_length=200, default="N/A")
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='video_analysis', blank=True)
 
     owner = models.ForeignKey('auth.User', related_name='video_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
@@ -288,13 +292,17 @@ class VRExperiment(models.Model):
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
     rig = models.CharField(max_length=200, default="N/A")
+    imaging = models.CharField(max_length=200, default="N/A")
 
     sync_path = models.CharField(max_length=200, default="N/A")
     track_path = models.CharField(max_length=200, default="N/A")
     bonsai_path = models.CharField(max_length=200, default="N/A")
     avi_path = models.CharField(max_length=200, default="N/A")
     fluo_path = models.CharField(max_length=200, default="N/A")
-    preproc_files = models.ManyToManyField('AnalyzedData', related_name='vr_analysis')
+    tif_path = models.CharField(max_length=200, default="N/A")
+    dlc_path = models.CharField(max_length=200, default="N/A")
+
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='vr_analysis', blank=True)
 
     owner = models.ForeignKey('auth.User', related_name='vr_experiment', on_delete=models.CASCADE,
                               null=null_value, default=default_user)
@@ -331,6 +339,7 @@ class Profile(models.Model):
     VideoExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     VRExperiment_path = models.CharField(max_length=1000, default='"N/A', null=True)
     ImmunoStain_path = models.CharField(max_length=1000, default='"N/A', null=True)
+    Figure_path = models.CharField(max_length=1000, default='"N/A', null=True)
 
 
 class AnalyzedData(models.Model):
@@ -341,6 +350,7 @@ class AnalyzedData(models.Model):
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
     rig = models.CharField(max_length=200, default="N/A")
+    imaging = models.CharField(max_length=200, default="N/A")
     date = models.DateTimeField(default=timezone.now)
     notes = models.TextField(max_length=5000, default="N/A")
 
@@ -350,3 +360,16 @@ class AnalyzedData(models.Model):
         return self.slug
 
 
+class Figure(models.Model):
+    figure_type = models.CharField(max_length=200, default="N/A")
+    figure_path = models.CharField(max_length=200, default="N/A")
+    input_path = models.TextField(max_length=50000, default="N/A")
+    preproc_files = models.ManyToManyField('AnalyzedData', related_name='figure_analysis')
+
+    date = models.DateTimeField(default=timezone.now)
+    notes = models.TextField(max_length=5000, default="N/A")
+
+    slug = models.SlugField(unique=True, default=timezone.now, max_length=200)
+
+    def __str__(self):
+        return self.slug

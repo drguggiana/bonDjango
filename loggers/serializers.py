@@ -105,6 +105,7 @@ class SurgerySerializer(serializers.HyperlinkedModelSerializer):
     class Meta:
         model = Surgery
         fields = ([f.name for f in model._meta.get_fields()])
+        fields.remove('slug')
         fields = sort_fields(fields)
 
         extra_kwargs = common_extra_kwargs.copy()
@@ -294,7 +295,22 @@ class AnalyzedDataSerializer(serializers.HyperlinkedModelSerializer):
         fields = sort_fields(fields)
         extra_kwargs = {'url': {'lookup_field': 'slug'},
                         'vr_analysis': {'lookup_field': 'slug'},
-                        'video_analysis': {'lookup_field': 'slug'}}
+                        'video_analysis': {'lookup_field': 'slug'},
+                        'figure_analysis': {'lookup_field': 'slug'}
+                        }
+
+
+class FigureSerializer(serializers.HyperlinkedModelSerializer):
+    preproc_files = serializers.HyperlinkedRelatedField(
+        view_name='analyzeddata-detail', many=True, read_only=True, lookup_field='slug')
+
+    class Meta:
+        model = Figure
+        fields = ([f.name for f in model._meta.get_fields()])
+        # fields.remove('slug')
+        fields = sort_fields(fields)
+        extra_kwargs = {'url': {'lookup_field': 'slug'},
+                        }
 
 
 class GeneralSerializer(serializers.ModelSerializer):

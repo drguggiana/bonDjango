@@ -200,11 +200,12 @@ def percentage_function(request, data, fields, restrictions):
     idx_start = dates.index(start_date)
     # calculate percentage weight
     percentage_weight = [el*100/sheet.column['weight'][idx_start] for el in sheet.column['weight'][idx_start:]]
-
-    print(idx_start)
+    # rewrite dates also for plotting
+    plot_dates = dates[idx_start:]
+    print(plot_dates)
     # define the data dictionary
     data_dict = {
-        'Date': sheet.column['sheet_date'],
+        'Date': plot_dates,
         'Percentage': percentage_weight,
     }
 
@@ -212,7 +213,7 @@ def percentage_function(request, data, fields, restrictions):
     svg = excel.pe.save_as(
         adict=data_dict,
         dest_label_x_in_column=0,
-        dest_x_labels=dates,
+        dest_x_labels=plot_dates,
         dest_file_type='svg',
         dest_chart_type='line',
         dest_title='Weight progression',

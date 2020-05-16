@@ -2,6 +2,7 @@
 # Found the solution online
 import base64
 import datetime
+import pytz
 import inspect
 import pprint as pp
 import re
@@ -209,33 +210,36 @@ def parse_path_experiment(proto_path, instance, model_path):
     # get the different parameters from the model
     # get the date
     date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
+    date = date.replace(tzinfo=pytz.UTC)
+    # get whether there was imaging
+    if ('_miniscope_' in proto_path) and not (any(el in proto_path for el in ['nomini', 'nofluo'])):
+        imaging = 'doric'
+    else:
+        imaging = 'no'
     # initialize list for second animal coordinates
     is_animal2 = False
     # set the position counter
     animal_last = 8
-    # check if there is a miniscope condition
+    # define the rig
     if name_parts[6] in ['miniscope', 'social', 'other']:
+        # set the rig variable
         rig = name_parts[6]
-        # set the coordinates of the animal name
-        # animal_last = 9
-
-        if rig == 'miniscope':
-            # define the miniscope path
-            fluo_path = join(base_path, proto_path + '_calcium_data.h5')
-        elif rig == 'social':
-            fluo_path = ''
+        # if the rig is social, set the second animal flag to true
+        if rig == 'social':
             is_animal2 = True
-        else:
-            rig = 'other'
-            fluo_path = ''
-
         # increase the counter
         animal_last += 1
     else:
         rig = 'VR'
-        fluo_path = ''
-        # animal_last = 8
 
+    # if imaging is detected, create the paths for fluo and tif
+    if imaging != 'no':
+        # define the calcium data path
+        fluo_path = join(base_path, proto_path + '_calcium_data.h5')
+        tif_path = join(base_path, proto_path + '.tif')
+    else:
+        fluo_path = ''
+        tif_path = ''
     # get the animal
     animal = Mouse.objects.get(mouse_name='_'.join(name_parts[animal_last-2:animal_last+1]))
     # get the second animal if present
@@ -262,32 +266,38 @@ def parse_path_experiment(proto_path, instance, model_path):
     if len(name_parts) > animal_last:
         notes = '_'.join((name_parts[animal_last:]))
     else:
+        # if not, add blank to keep it searchable
         notes = 'BLANK'
 
     # define the path for the bonsai file
     bonsai_path = join(base_path, proto_path + '.csv')
     # define the path for the avi file
     avi_path = join(base_path, proto_path + '.avi')
-    # # define the path for the tracking and sync file depending on date
+    # define the path for the tracking and sync file depending on date
     track_path = join(base_path, proto_path + '.txt')
     # define the path for the sync file
-    sync_path = join(base_path, proto_path + '.csv')
+    sync_path = proto_path
+    # define the path for the dlc file
+    dlc_path = join(base_path, proto_path + '_dlc.h5')
     if rig == 'miniscope':
         sync_path = sync_path.replace('_miniscope_', '_syncMini_')
     else:
         sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
-    
+    sync_path = join(base_path, sync_path) + '.csv'
     return {'owner': instance.request.user,
             'mouse': animal,
             'date': date,
             'result': result,
             'lighting': lighting,
             'rig': rig,
+            'imaging': imaging,
             'bonsai_path': bonsai_path,
             'avi_path': avi_path,
             'track_path': track_path,
             'sync_path': sync_path,
             'fluo_path': fluo_path,
+            'tif_path': tif_path,
+            'dlc_path': dlc_path,
             'notes': notes,
             'animal2': animal2}
 
@@ -630,7 +640,7 @@ class SurgeryViewSet(viewsets.ModelViewSet):
             # get the type of experiment from the url
             url_experiment_type = self.request.data['experiment_type']
             # get the users in the experiment type
-            user_queryset = ExperimentType.objects.get(experiment_name=url_experiment_type).users.all()
+            user_queryset = ExperimentType.objects.get(experiment_name=url_experiment_type.split('/')[-2]).users.all()
             if self.request.user not in user_queryset:
                 permission_classes = [IsAdminUser, ]
             else:
@@ -759,8 +769,19 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
                 del data_dict['track_path']
                 # check the paths in the filesystem, otherwise leave the entry empty
                 for key, value in data_dict.items():
+                    # if the entry is already empty, don't check
+                    if data_dict[key] == '':
+                        continue
                     if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                        # print a warning
+                        print('Path not found for key %s and value %s' % (key, value))
+                        # clear the path
                         data_dict[key] = ''
+
+                # if the tif file exists but the calcium_data file doesn't, log it in the notes
+                if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
+                    data_dict['imaging'] = 'no'
+                    data_dict['notes'] += 'norois'
                 # create the model instance with the data
                 model_instance = VideoExperiment.objects.create(**data_dict)
                 # get the model for the experiment type to use
@@ -869,8 +890,18 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
                 del data_dict['animal2']
                 # check the paths in the filesystem, otherwise leave the entry empty
                 for key, value in data_dict.items():
+                    # if the entry is already empty, don't check
+                    if data_dict[key] == '':
+                        continue
                     if (isinstance(value, str)) and ('path' in key) and (not exists(value)):
+                        # print a warning
+                        print('Path not found for key %s and value %s' % (key, value))
+                        # clear the path
                         data_dict[key] = ''
+                # if the tif file exists but the calcium_data file doesn't, log it in the notes
+                if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
+                    data_dict['imaging'] = 'no'
+                    data_dict['notes'] += 'norois'
                 # create the model instance with the data
                 model_instance = VRExperiment.objects.create(**data_dict)
                 # get the model for the experiment type to use
@@ -949,7 +980,6 @@ class StrainViewSet(viewsets.ModelViewSet):
 
 # viewset for scoresheets
 class ScoreSheetViewSet(viewsets.ModelViewSet):
-    # TODO: add the visualizations
     target_model = ScoreSheet
 
     queryset = target_model.objects.all()
@@ -976,11 +1006,6 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         return general_serializer(self)
-
-    # @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
-    # def labfolder_action(self, request, *args, **kwargs):
-    #     labfolder_entry(self)
-    #     return HttpResponseRedirect('/loggers/')
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def see_scoresheet(self, request, *args, **kwargs):
@@ -1095,6 +1120,27 @@ class ExperimentTypeViewSet(viewsets.ModelViewSet):
 class AnalyzedDataViewSet(viewsets.ModelViewSet):
 
     target_model = AnalyzedData
+    queryset = target_model.objects.all()
+    serializer_class = eval(target_model.__name__ + 'Serializer')
+    permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
+    filter_backends = (DynamicSearchFilter, filters.OrderingFilter,)
+    ordering = ['-date']
+    ordering_fields = ['date']
+    search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+
+    lookup_field = 'slug'
+
+    def get_serializer_class(self):
+        return general_serializer(self)
+
+    @action(detail=False, renderer_classes=[renderers.StaticHTMLRenderer])
+    def from_python(self, request, *args, **kwargs):
+        return from_python_function(self)
+
+
+class FigureViewSet(viewsets.ModelViewSet):
+
+    target_model = Figure
     queryset = target_model.objects.all()
     serializer_class = eval(target_model.__name__ + 'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)

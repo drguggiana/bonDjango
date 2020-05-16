@@ -20,11 +20,11 @@ class DynamicSearchFilter(filters.SearchFilter):
         # for all the terms
         for el in search_full:
             # if = is not there, assume the search term (and not the field) was given
-            if '=' not in el:
+            if ':' not in el:
                 search_terms.append(el)
             else:
                 # otherwise, split the query and save the term and field
-                separated = el.replace('=', ' ').split()
+                separated = el.replace(':', ' ').split()
                 search_fields.append(separated[0])
                 # check if space was added as a query
                 if len(separated) == 1:
