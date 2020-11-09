@@ -9,6 +9,9 @@ import pyexcel.constants as constants
 import pyexcel.internal.core as sources
 from pyexcel.core import _split_keywords
 from pyexcel.sheet import Sheet
+from django.db.utils import IntegrityError
+import datetime
+import pytz
 import os
 
 
@@ -49,34 +52,114 @@ def embedhandson_table(request):
 
 
 def import_data(request):
-
+    """Import score sheets exported from bondjango"""
     if request.method == "POST":
+        # get the data from the upload form
         form = UploadFileForm(request.POST, request.FILES)
+        # get the model's fields
         search_fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation])
 
-        def na_remover(row):
-            row = [0 if el == 'N/A' else el for el in row]
-            return row
-
         def mouse_namer(row):
+            """Find the mouse instance in the database based on the mouse name"""
             q = Mouse.objects.filter(mouse_name=row[-2])[0]
             row[-2] = q
             p = User.objects.filter(username=row[-1])[0]
             row[-1] = p
             return row
 
-        def fix_format(row):
-            # read the different sheets
-            slug_field = slugify(str(row[1])[0:19])
-            return row
+        # check that the form is valid
         if form.is_valid():
-            print(request.FILES['file'])
 
-            def save_book_as(**keywords):
-                return
-            request.FILES['file'].save_book_to_database(models=[ScoreSheet], initializers=[mouse_namer],
-                                                        mapdicts=[search_fields+['mouse', 'owner']])
-                                                        # mapdicts=[search_fields.sort()])
+            # split the book into sheets and pass one at a time, since the mouse names are in the mouse sheets and
+            # django excel expects the model name to be the sheet name
+            full_book = request.FILES['file'].get_book_dict()
+            # for all the sheets
+            for single_sheet in full_book:
+                # load the sheet to check for contents
+                target_sheet = full_book[single_sheet]
+                print(target_sheet)
+                # if it's empty, skip
+                if target_sheet[0][0] == '':
+                    continue
+                try:
+                    # save to the database
+                    request.FILES['file'].save_to_database(model=ScoreSheet, initializer=mouse_namer,
+                                                           mapdict=search_fields + ['mouse', 'owner'],
+                                                           sheet_name=single_sheet)
+                except IntegrityError:
+                    # if the entry is already there, give a warning and skip
+                    print('entry for mouse %s already in database' % single_sheet)
+
+            # TODO: use the other response where I only display the sheet being uploaded
+            return HttpResponse(embedhandson_table(request))
+        else:
+            return HttpResponseBadRequest()
+    else:
+        form = UploadFileForm()
+    return render(request, 'upload_form.html', {'form': form, 'title': 'Import', 'header': 'Upload data'})
+
+
+def import_old_data(request):
+    """Import a score sheet spreadsheet saved manually (i.e. old ones)"""
+    if request.method == "POST":
+        # get the data from the upload form
+        form = UploadFileForm(request.POST, request.FILES)
+
+        # check that the form is valid
+        if form.is_valid():
+
+            # split the book into sheets and pass one at a time, since the mouse names are in the mouse sheets and
+            # django excel expects the model name to be the sheet name
+            full_book = request.FILES['file'].get_book_dict()
+            # for all the sheets
+            for mouse_name in full_book:
+                # get the sheet
+                single_sheet = full_book[mouse_name]
+                # for all the entries in the single sheet
+                for entry_raw in single_sheet[1:]:
+                    # if the date value is absent, skip
+                    if entry_raw[0] == '':
+                        continue
+                    # eliminate empty spaces
+                    entry = [0 if el in [''] else el for el in entry_raw]
+                    # eliminate N/A and A/L
+                    entry = [1 if el in ['N/A', 'A/L', 'AL'] else el for el in entry]
+                    # get the mouse instance
+                    mouse_instance = Mouse.objects.get(mouse_name=mouse_name)
+
+                    # get the owner
+                    owner_instance = mouse_instance.owner
+
+                    # format the date
+                    date = datetime.datetime.strptime(entry[0], '%d.%m.%y')
+                    date = date.replace(tzinfo=pytz.UTC)
+                    # create a string formatted as a slug to search for repeated ones
+                    # print(date.strftime('%Y-%m-%d-%H%M%S'))
+                    # print(len(ScoreSheet.objects.filter(slug=date.strftime('%Y-%m-%d-%H%M%S'))))
+                    while len(ScoreSheet.objects.filter(slug=date.strftime('%Y-%m-%d-%H%M%S'))) > 0:
+                        date += datetime.timedelta(minutes=20)
+
+                    # assemble the dictionary for creating the entries
+                    data_dict = {
+                        'sheet_date': date,
+                        'carprofen': 1 if entry[1] == 'x' else 0,
+                        'weight': float(entry[2]),
+                        'food_consumed': float(entry[3]),
+                        'behavior': float(entry[4]),
+                        'posture_fur': float(entry[5]),
+                        'water_food_uptake': float(entry[6]),
+                        'general_condition': float(entry[7]),
+                        'skin_turgor': float(entry[8]),
+                        'brain_surgery': float(entry[9]),
+                        'notes': '' if len(entry) == 11 else entry[11],
+                        'mouse': mouse_instance,
+                        'owner': owner_instance,
+                    }
+                    # create the model instance with the data
+                    model_instance = ScoreSheet.objects.create(**data_dict)
+                    # save the model instance
+                    # model_instance.save()
+
             return HttpResponse(embedhandson_table(request))
         else:
             return HttpResponseBadRequest()
@@ -143,16 +226,20 @@ def export_network(instance, request):
     # get the final path
     book_path = os.path.join(license_object.score_sheet_path, file_name)
     # save the book to file
-    book_stream = sources.save_book(out_book, file_type='xls')
-    # print(excel._make_response(book_stream, 'xls', 200, book_path).__dict__)
-    # file_stream = pe.save_as(query_sets=scoresheets[0], column_names=fields,
-    #                          dest_file_type='xls')
-    # sheet = file_stream.sheet
+    out_book.save_as(book_path)
 
-    # print(file_stream.read())
-    return HttpResponse(excel._make_response(book_stream, 'xls', 200, book_path), content_type='application/msexcel')
-    # return HttpResponse(export_data(request, "custom", scoresheets[0], fields), content_type='application/msexcel')
-    # return HttpResponseRedirect('/loggers/score_sheet/')
+    # the following code prompts the user to save the spreadsheet wherever, might be useful later
+    # book_stream = sources.save_book(out_book, file_type='xls')
+    # # get the response
+    # response = excel._make_response(book_stream, 'xls', 200, file_name=file_name)
+    # # get the content disposition from the response to add to the http response
+    # content_disposition = {'Content-Disposition': response['Content-Disposition']}
+    # # get the http response
+    # hresponse = HttpResponse(response, content_type='application/vnd.ms-excel')
+    # # edit the headers to include the content disposition, since for some reason httpresponse doesn't do it
+    # hresponse._headers['content-disposition'] = list(content_disposition.items())[0]
+    # return hresponse
+    return HttpResponseRedirect('/loggers/score_sheet/')
 
 
 def weights_function(request, data, fields):

@@ -40,9 +40,10 @@ from .serializers import *
 from django.apps import apps
 
 from .filters import DynamicSearchFilter
+from django_filters.rest_framework import DjangoFilterBackend
 import pyexcel as pe
 from .django_excel_interface import handson_table, embedhandson_table, import_data, export_data, \
-    export_network, weights_function, percentage_function
+    export_network, weights_function, percentage_function, import_old_data
 
 
 # snippet to convert camel case to snake case via regex
@@ -221,7 +222,7 @@ def parse_path_experiment(proto_path, instance, model_path):
     # set the position counter
     animal_last = 8
     # define the rig
-    if name_parts[6] in ['miniscope', 'social', 'other']:
+    if name_parts[6] in ['miniscope', 'social', 'other', 'VPrey']:
         # set the rig variable
         rig = name_parts[6]
         # if the rig is social, set the second animal flag to true
@@ -281,9 +282,13 @@ def parse_path_experiment(proto_path, instance, model_path):
     dlc_path = join(base_path, proto_path + '_dlc.h5')
     if rig == 'miniscope':
         sync_path = sync_path.replace('_miniscope_', '_syncMini_')
+    elif rig == 'VPrey':
+        sync_path = sync_path.replace('_VPrey_', '_syncVPrey_')
     else:
         sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
     sync_path = join(base_path, sync_path) + '.csv'
+
+    print(sync_path)
     return {'owner': instance.request.user,
             'mouse': animal,
             'date': date,
@@ -541,8 +546,12 @@ class WindowViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (filters.SearchFilter,)
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter)
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name'])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['window_date'] = ['gt', 'lt', 'exact']
+    # filterset_fields['notes'] = ['icontains']
+    filterset_fields['slug'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -628,10 +637,13 @@ class SurgeryViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     # permission_classes = (permissions.IsAuthenticatedOrReadOnly,
     #                       IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -722,10 +734,14 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
+    filterset_fields['slug'] = ['iexact']
 
     lookup_field = 'slug'
 
@@ -793,8 +809,8 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
 
             return HttpResponseRedirect('/loggers/video_experiment/')
         except:
-            return HttpResponseBadRequest('loading file failed, check file names')
-
+            print('Problem file:' + file)
+            return HttpResponseBadRequest('loading file %s failed, check file names' % file)
 
 # viewset for 2P experiments
 class TwoPhotonViewSet(viewsets.ModelViewSet):
@@ -804,10 +820,13 @@ class TwoPhotonViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    # filterset_fields['notes'] = ['icontains']
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -826,10 +845,13 @@ class IntrinsicImagingViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    # filterset_fields['notes'] = ['icontains']
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -848,10 +870,14 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter)
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
+    filterset_fields['slug'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -870,6 +896,8 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def load_batch(self, request, *args, **kwargs):
         """Select files automatically from a target path to create entries"""
+        # initialize file to avoid the warning below
+        file = ''
         try:
             # get a list of the files in the associated path
             base_path = self.request.user.profile.VRExperiment_path
@@ -913,7 +941,8 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
 
             return HttpResponseRedirect('/loggers/vr_experiment/')
         except:
-            return HttpResponseBadRequest('loading file failed, check file names')
+            print('Problem file:' + file)
+            return HttpResponseBadRequest('loading file %s failed, check file names' % file)
 
     def perform_create(self, serializer):
         # # get the file name from the entry
@@ -986,10 +1015,13 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-sheet_date']
     ordering_fields = ['sheet_date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['sheet_date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -1022,17 +1054,21 @@ class ScoreSheetViewSet(viewsets.ModelViewSet):
     def import_scoresheet(self, request, *args, **kwargs):
         return HttpResponse(import_data(request))
 
-    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
-    def export_scoresheet(self, request, *args, **kwargs):
-        # remember to install the required pyexcel format variants
-        # get the mouse from the request
-        mouse = self.get_object().mouse
-        # get the other scoresheet objects from the same mouse
-        data = ScoreSheet.objects.filter(mouse=mouse)
-        # get the fields
-        fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
-                                                                                          'owner__username'])
-        return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer], methods=['GET', 'POST'])
+    def import_old_scoresheet(self, request, *args, **kwargs):
+        return HttpResponse(import_old_data(request))
+
+    # @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    # def export_scoresheet(self, request, *args, **kwargs):
+    #     # remember to install the required pyexcel format variants
+    #     # get the mouse from the request
+    #     mouse = self.get_object().mouse
+    #     # get the other scoresheet objects from the same mouse
+    #     data = ScoreSheet.objects.filter(mouse=mouse)
+    #     # get the fields
+    #     fields = ([f.name for f in ScoreSheet._meta.get_fields() if not f.is_relation] + ['mouse__mouse_name',
+    #                                                                                       'owner__username'])
+    #     return HttpResponse(export_data(request, "custom", data, fields), content_type='application/msexcel')
 
     @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
     def export_to_network(self, request, *args, **kwargs):
@@ -1069,10 +1105,13 @@ class ImmunoStainViewSet(viewsets.ModelViewSet):
     serializer_class = eval(target_model.__name__+'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,
                           IsOwnerOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter, )
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter, )
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
 
     @action(detail=True, renderer_classes=[renderers.StaticHTMLRenderer])
     def labfolder_action(self, request, *args, **kwargs):
@@ -1123,10 +1162,14 @@ class AnalyzedDataViewSet(viewsets.ModelViewSet):
     queryset = target_model.objects.all()
     serializer_class = eval(target_model.__name__ + 'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter,)
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter,)
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
+    filterset_fields['slug'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -1144,10 +1187,13 @@ class FigureViewSet(viewsets.ModelViewSet):
     queryset = target_model.objects.all()
     serializer_class = eval(target_model.__name__ + 'Serializer')
     permission_classes = (permissions.IsAuthenticatedOrReadOnly,)
-    filter_backends = (DynamicSearchFilter, filters.OrderingFilter,)
+    filter_backends = (DjangoFilterBackend, filters.OrderingFilter,)
     ordering = ['-date']
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
+    filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
+    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['notes'] = ['icontains']
 
     lookup_field = 'slug'
 
