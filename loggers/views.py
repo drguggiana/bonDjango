@@ -222,7 +222,7 @@ def parse_path_experiment(proto_path, instance, model_path):
     # set the position counter
     animal_last = 8
     # define the rig
-    if name_parts[6] in ['miniscope', 'social', 'other', 'VPrey']:
+    if name_parts[6] in ['miniscope', 'social', 'other', 'VPrey', 'VScreen']:
         # set the rig variable
         rig = name_parts[6]
         # if the rig is social, set the second animal flag to true
@@ -276,6 +276,8 @@ def parse_path_experiment(proto_path, instance, model_path):
     avi_path = join(base_path, proto_path + '.avi')
     # define the path for the tracking and sync file depending on date
     track_path = join(base_path, proto_path + '.txt')
+    # define the path for the h5 file from vscreen (unity)
+    screen_path = join(base_path, proto_path + '.h5')
     # define the path for the sync file
     sync_path = proto_path
     # define the path for the dlc file
@@ -284,6 +286,8 @@ def parse_path_experiment(proto_path, instance, model_path):
         sync_path = sync_path.replace('_miniscope_', '_syncMini_')
     elif rig == 'VPrey':
         sync_path = sync_path.replace('_VPrey_', '_syncVPrey_')
+    elif rig == 'VScreen':
+        sync_path = sync_path.replace('_VScreen_', '_syncVScreen_')
     else:
         sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
     sync_path = join(base_path, sync_path) + '.csv'
@@ -302,6 +306,7 @@ def parse_path_experiment(proto_path, instance, model_path):
             'sync_path': sync_path,
             'fluo_path': fluo_path,
             'tif_path': tif_path,
+            'screen_path': screen_path,
             'dlc_path': dlc_path,
             'notes': notes,
             'animal2': animal2}

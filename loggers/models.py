@@ -301,6 +301,7 @@ class VRExperiment(models.Model):
     fluo_path = models.CharField(max_length=200, default="N/A")
     tif_path = models.CharField(max_length=200, default="N/A")
     dlc_path = models.CharField(max_length=200, default="N/A")
+    screen_path = models.CharField(max_length=200, default="N/A")
 
     preproc_files = models.ManyToManyField('AnalyzedData', related_name='vr_analysis', blank=True)
 
