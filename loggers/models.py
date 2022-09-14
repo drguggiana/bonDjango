@@ -310,10 +310,10 @@ class VRExperiment(models.Model):
     notes = models.TextField(max_length=5000, default="N/A")
     experiment_type = models.ManyToManyField('ExperimentType', related_name='vrexperiment_type')
 
-    slug = models.SlugField(unique=True, default=str(timezone.now))
+    slug = models.SlugField(unique=True, default=str(timezone.now), max_length=200)
 
     def save(self, *args, **kwargs):
-        self.slug = slugify(basename(str(self.bonsai_path)[:-4]))
+        self.slug = slugify(basename(str(self.avi_path)[:-4]))
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -346,7 +346,7 @@ class Profile(models.Model):
 class AnalyzedData(models.Model):
     analysis_type = models.CharField(max_length=200, default="N/A")
     analysis_path = models.CharField(max_length=200, default="N/A")
-    input_path = models.TextField(max_length=50000, default="N/A")
+    input_path = models.TextField(max_length=500000, default="N/A")
     pic_path = models.CharField(max_length=200, default="N/A")
     result = models.CharField(max_length=200, default="N/A")
     lighting = models.CharField(max_length=200, default="N/A")
@@ -364,7 +364,7 @@ class AnalyzedData(models.Model):
 class Figure(models.Model):
     figure_type = models.CharField(max_length=200, default="N/A")
     figure_path = models.CharField(max_length=200, default="N/A")
-    input_path = models.TextField(max_length=50000, default="N/A")
+    input_path = models.TextField(max_length=500000, default="N/A")
     preproc_files = models.ManyToManyField('AnalyzedData', related_name='figure_analysis')
 
     date = models.DateTimeField(default=timezone.now)

@@ -11,5 +11,5 @@ def start():
     scheduler = BackgroundScheduler()
     scheduler.add_job(dump_database, 'interval', weeks=1)
     scheduler.add_job(check_restriction, 'interval', weeks=1)
-    scheduler.add_job(check_files, 'interval', seconds=5000)
+    # scheduler.add_job(check_files, 'interval', seconds=5000)
     scheduler.start()

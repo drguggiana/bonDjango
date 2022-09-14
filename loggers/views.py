@@ -4,10 +4,11 @@ import base64
 import datetime
 import pytz
 import inspect
-import pprint as pp
+from pprint import pprint
 import re
 from io import BytesIO
 from PIL import Image, ImageOps
+import numpy as np
 
 # used to make paths below
 from os.path import join, exists
@@ -61,7 +62,8 @@ def labfolder_entry(instance):
     # get the current user
     current_user = str(instance.request.user)
     # pass the form and model to create the labfolder entry
-    labfolderRequest.create_table(form, target_model, current_user)
+    # labfolderRequest.create_table(form, target_model, current_user)
+    labfolderRequest.create_text(form, target_model, current_user)
 
 
 # view to show images in the database, ideally after search query
@@ -213,8 +215,15 @@ def parse_path_experiment(proto_path, instance, model_path):
     date = datetime.datetime.strptime('_'.join(name_parts[:6]), '%m_%d_%Y_%H_%M_%S')
     date = date.replace(tzinfo=pytz.UTC)
     # get whether there was imaging
-    if ('_miniscope_' in proto_path) and not (any(el in proto_path for el in ['nomini', 'nofluo'])):
-        imaging = 'doric'
+    if not (any(el in proto_path for el in ['nomini', 'nofluo'])):
+        if 'WF' in proto_path:
+            imaging = 'wirefree'
+        elif 'UC3' in proto_path:
+            imaging = 'uc3'
+        elif 'UC4' in proto_path:
+            imaging = 'uc4'
+        else:
+            imaging = 'doric'
     else:
         imaging = 'no'
     # initialize list for second animal coordinates
@@ -222,7 +231,8 @@ def parse_path_experiment(proto_path, instance, model_path):
     # set the position counter
     animal_last = 8
     # define the rig
-    if name_parts[6] in ['miniscope', 'social', 'other', 'VPrey', 'VScreen']:
+    if name_parts[6] in ['miniscope', 'social', 'other', 'VPrey', 'VScreen',
+                         'ARPrey', 'VTuning', 'VWheel', 'VTuningWF', 'VWheelWF']:
         # set the rig variable
         rig = name_parts[6]
         # if the rig is social, set the second animal flag to true
@@ -236,7 +246,7 @@ def parse_path_experiment(proto_path, instance, model_path):
     # if imaging is detected, create the paths for fluo and tif
     if imaging != 'no':
         # define the calcium data path
-        fluo_path = join(base_path, proto_path + '_calcium_data.h5')
+        fluo_path = join(base_path, proto_path + '_calcium.hdf5')
         tif_path = join(base_path, proto_path + '.tif')
     else:
         fluo_path = ''
@@ -276,7 +286,7 @@ def parse_path_experiment(proto_path, instance, model_path):
     avi_path = join(base_path, proto_path + '.avi')
     # define the path for the tracking and sync file depending on date
     track_path = join(base_path, proto_path + '.txt')
-    # define the path for the h5 file from vscreen (unity)
+    # define the path for the h5 file from unity
     screen_path = join(base_path, proto_path + '.h5')
     # define the path for the sync file
     sync_path = proto_path
@@ -288,28 +298,39 @@ def parse_path_experiment(proto_path, instance, model_path):
         sync_path = sync_path.replace('_VPrey_', '_syncVPrey_')
     elif rig == 'VScreen':
         sync_path = sync_path.replace('_VScreen_', '_syncVScreen_')
+    elif rig == 'ARPrey':
+        sync_path = sync_path.replace('ARPrey', '_syncARPrey_')
+    elif rig == 'VTuning':
+        sync_path = sync_path.replace('_VTuning_', '_syncVTuning_')
+    elif rig == 'VWheel':
+        sync_path = sync_path.replace('_VWheel_', '_syncVWheel_')
+    elif rig == 'VTuningWF':
+        sync_path = sync_path.replace('_VTuningWF_', '_syncVTuningWF_')
+    elif rig == 'VWheelWF':
+        sync_path = sync_path.replace('_VWheelWF_', '_syncVWheelWF_')
     else:
         sync_path = sync_path[:19] + '_syncVR' + sync_path[19:]
     sync_path = join(base_path, sync_path) + '.csv'
 
-    print(sync_path)
-    return {'owner': instance.request.user,
-            'mouse': animal,
-            'date': date,
-            'result': result,
-            'lighting': lighting,
-            'rig': rig,
-            'imaging': imaging,
-            'bonsai_path': bonsai_path,
-            'avi_path': avi_path,
-            'track_path': track_path,
-            'sync_path': sync_path,
-            'fluo_path': fluo_path,
-            'tif_path': tif_path,
-            'screen_path': screen_path,
-            'dlc_path': dlc_path,
-            'notes': notes,
-            'animal2': animal2}
+    new_entry = {'owner': instance.request.user,
+                 'mouse': animal,
+                 'date': date,
+                 'result': result,
+                 'lighting': lighting,
+                 'rig': rig,
+                 'imaging': imaging,
+                 'bonsai_path': bonsai_path,
+                 'avi_path': avi_path,
+                 'track_path': track_path,
+                 'sync_path': sync_path,
+                 'fluo_path': fluo_path,
+                 'tif_path': tif_path,
+                 'screen_path': screen_path,
+                 'dlc_path': dlc_path,
+                 'notes': notes,
+                 'animal2': animal2}
+    pprint(new_entry)
+    return new_entry
 
 
 def parse_path_image(proto_path, instance, model_path):
@@ -541,6 +562,16 @@ class MouseViewSet(viewsets.ModelViewSet):
         # redirect back to the main page
         return HttpResponseRedirect('/loggers/')
 
+    # extra action to generate a summary of the mouse with all related pics and links
+    @action(detail=True, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def summary(self, request, *args, **kwargs):
+        # get the current queryset
+        data = [self.get_object()]
+        # get the pic url list from the function above
+        pic_list = pic_display(data)
+        # return a response to the pic displaying template
+        return Response({'pic_list': pic_list}, template_name='loggers/summary.html')
+
 
 # viewset for the cranial windows
 class WindowViewSet(viewsets.ModelViewSet):
@@ -649,6 +680,7 @@ class SurgeryViewSet(viewsets.ModelViewSet):
     filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
     filterset_fields['date'] = ['gt', 'lt', 'exact']
     filterset_fields['notes'] = ['icontains']
+    filterset_fields['experiment_type'] = ['icontains']
 
     lookup_field = 'slug'
 
@@ -744,9 +776,10 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
     filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
-    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['date'] = ['gt', 'lt', 'icontains']
     filterset_fields['notes'] = ['icontains']
-    filterset_fields['slug'] = ['iexact']
+    filterset_fields['slug'] = ['icontains']
+    filterset_fields['mouse'] = ['exact']
 
     lookup_field = 'slug'
 
@@ -786,6 +819,8 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
                 data_dict = parse_path_experiment(file, self, 'VideoExperiment_path')
                 # get rid of the animal2 entry
                 del data_dict['animal2']
+                # of the screen one
+                del data_dict['screen_path']
                 # and of the motive one
                 del data_dict['track_path']
                 # check the paths in the filesystem, otherwise leave the entry empty
@@ -799,10 +834,11 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
                         # clear the path
                         data_dict[key] = ''
 
-                # if the tif file exists but the calcium_data file doesn't, log it in the notes
-                if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
-                    data_dict['imaging'] = 'no'
-                    data_dict['notes'] += 'norois'
+                # # if the tif file exists but the calcium_data file doesn't, log it in the notes
+                # This is for when we didn't have calcium signal extraction as part of snakemake
+                # if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
+                #     data_dict['imaging'] = 'no'
+                #     data_dict['notes'] += 'norois'
                 # create the model instance with the data
                 model_instance = VideoExperiment.objects.create(**data_dict)
                 # get the model for the experiment type to use
@@ -816,6 +852,7 @@ class VideoExperimentViewSet(viewsets.ModelViewSet):
         except:
             print('Problem file:' + file)
             return HttpResponseBadRequest('loading file %s failed, check file names' % file)
+
 
 # viewset for 2P experiments
 class TwoPhotonViewSet(viewsets.ModelViewSet):
@@ -883,6 +920,7 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
     filterset_fields['date'] = ['gt', 'lt', 'exact']
     filterset_fields['notes'] = ['icontains']
     filterset_fields['slug'] = ['icontains']
+    filterset_fields['mouse'] = ['exact']
 
     lookup_field = 'slug'
 
@@ -899,6 +937,38 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
         return HttpResponseRedirect('/loggers/')
 
     @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
+    def labfolder_dump(self, request, *args, **kwargs):
+
+        # get the current user
+        current_user = str(self.request.user)
+        # get the existing model instances
+        model_instances = VRExperiment.objects.values_list()
+        # TODO: filter them based on user
+        # get the fields
+        model_fields = [f.name for f in VRExperiment._meta.get_fields()]
+        # assemble them into a dictionary
+        # allocate memory for the output
+        model_dicts = []
+        # for all the instances
+        for instance in model_instances:
+            # assemble the dictionary
+            current_dict = {field: value for field, value in zip(model_fields, instance)}
+            # store in the output
+            model_dicts.append(current_dict)
+
+        # send them to the dump function
+        labfolderRequest.dump_model(model_dicts, VRExperiment.__name__, current_user)
+
+        # existing_slugs = [el[0] for el in VRExperiment.objects.values_list('slug')][:10]
+        # existing_dates = [el[0] for el in VRExperiment.objects.values_list('date')][:10]
+        # # get the unique dates
+        # unique_dates = np.unique(existing_dates)
+        # pprint(VRExperiment.objects.values_list()[0])
+        # pprint([f.name for f in VRExperiment._meta.get_fields()])
+
+        return HttpResponseRedirect('/loggers/')
+
+    @action(detail=False, renderer_classes=[renderers.TemplateHTMLRenderer])
     def load_batch(self, request, *args, **kwargs):
         """Select files automatically from a target path to create entries"""
         # initialize file to avoid the warning below
@@ -908,8 +978,9 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
             base_path = self.request.user.profile.VRExperiment_path
             file_list = listdir(base_path)
             # include only csv files
-            file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
-            # get a list of the existing file names (bonsai)
+            # file_list = [el[:-4] for el in file_list if ('.csv' in el) and ('sync' not in el)]
+            file_list = [el[:-4] for el in file_list if ('.avi' in el)]
+            # get a list of the existing file names
             existing_rows = [el[0] for el in VRExperiment.objects.values_list('slug')]
             # for all the files
             for file in file_list:
@@ -931,14 +1002,22 @@ class VRExperimentViewSet(viewsets.ModelViewSet):
                         print('Path not found for key %s and value %s' % (key, value))
                         # clear the path
                         data_dict[key] = ''
-                # if the tif file exists but the calcium_data file doesn't, log it in the notes
-                if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
-                    data_dict['imaging'] = 'no'
-                    data_dict['notes'] += 'norois'
+                # # if the tif file exists but the calcium_data file doesn't, log it in the notes
+                # if (data_dict['fluo_path'] == '') and (data_dict['tif_path'] != ''):
+                #     data_dict['imaging'] = 'no'
+                #     data_dict['notes'] += 'norois'
+                # select the experiment type based on the notes
+                if data_dict['rig'] in ['VWheel', 'VWheelWF']:
+                    if 'fmm' in data_dict['notes']:
+                        experiment_name = 'Anesthetized'
+                    else:
+                        experiment_name = 'Head_fixed'
+                else:
+                    experiment_name = 'Free_behavior'
                 # create the model instance with the data
                 model_instance = VRExperiment.objects.create(**data_dict)
                 # get the model for the experiment type to use
-                experiment_type = ExperimentType.objects.filter(experiment_name='Free_behavior')
+                experiment_type = ExperimentType.objects.filter(experiment_name=experiment_name)
                 # add the experiment type to the model instance (must use set() cause m2m)
                 model_instance.experiment_type.set(experiment_type)
                 # save the model instance
@@ -972,7 +1051,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
 
-# viewset for vr experiments
+# viewset for licenses
 class LicenseViewSet(viewsets.ModelViewSet):
     target_model = License
 
@@ -992,7 +1071,7 @@ class LicenseViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
 
-# viewset for vr experiments
+# viewset for strains
 class StrainViewSet(viewsets.ModelViewSet):
     target_model = Strain
 
@@ -1172,7 +1251,7 @@ class AnalyzedDataViewSet(viewsets.ModelViewSet):
     ordering_fields = ['date']
     search_fields = ([f.name for f in target_model._meta.get_fields() if not f.is_relation])
     filterset_fields = {f.name: ['exact'] for f in target_model._meta.get_fields() if not f.is_relation}
-    filterset_fields['date'] = ['gt', 'lt', 'exact']
+    filterset_fields['date'] = ['gt', 'lt', 'icontains']
     filterset_fields['notes'] = ['icontains']
     filterset_fields['slug'] = ['icontains']
 
